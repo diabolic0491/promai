@@ -1,8 +1,12 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select
-from sqlalchemy.exc import IntegrityError
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
@@ -12,6 +16,7 @@ from app.schemas.counterparty import (
     CounterpartyRead,
     CounterpartyUpdate,
 )
+from app.services import counterparties as service
 
 
 router = APIRouter(
@@ -34,139 +39,16 @@ def create_counterparty(
     payload: CounterpartyCreate,
     session: DatabaseSession,
 ) -> Counterparty:
-    existing = session.scalar(
-        select(Counterparty).where(
-            Counterparty.unp == payload.unp
-        )
-    )
-
-    if existing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Контрагент с таким УНП уже существует",
-        )
-
-    counterparty = Counterparty(
-        unp=payload.unp,
-        name=payload.name,
-        short_name=payload.short_name,
-        legal_address=payload.legal_address,
-    )
-
-    session.add(counterparty)
-
     try:
-        session.commit()
-    except IntegrityError:
-        session.rollback()
-
+        return service.create_counterparty(
+            session=session,
+            payload=payload,
+        )
+    except service.CounterpartyAlreadyExistsError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Контрагент с таким УНП уже существует",
         )
-
-    session.refresh(counterparty)
-    return counterparty
-
-@router.patch(
-    "/{counterparty_id}",
-    response_model=CounterpartyRead,
-)
-def update_counterparty(
-    counterparty_id: int,
-    payload: CounterpartyUpdate,
-    session: DatabaseSession,
-) -> Counterparty:
-    counterparty = session.get(
-        Counterparty,
-        counterparty_id,
-    )
-
-    if counterparty is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Контрагент не найден",
-        )
-
-    update_data = payload.model_dump(
-        exclude_unset=True,
-    )
-
-    if not update_data:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Не передано ни одного поля для изменения",
-        )
-
-    for field_name, value in update_data.items():
-        setattr(counterparty, field_name, value)
-
-    session.commit()
-    session.refresh(counterparty)
-
-    return counterparty
-@router.post(
-    "/{counterparty_id}/archive",
-    response_model=CounterpartyRead,
-)
-def archive_counterparty(
-    counterparty_id: int,
-    session: DatabaseSession,
-) -> Counterparty:
-    counterparty = session.get(
-        Counterparty,
-        counterparty_id,
-    )
-
-    if counterparty is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Контрагент не найден",
-        )
-
-    if counterparty.status == "archived":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Контрагент уже находится в архиве",
-        )
-
-    counterparty.status = "archived"
-
-    session.commit()
-    session.refresh(counterparty)
-
-    return counterparty
-@router.post(
-    "/{counterparty_id}/restore",
-    response_model=CounterpartyRead,
-)
-def restore_counterparty(
-    counterparty_id: int,
-    session: DatabaseSession,
-) -> Counterparty:
-    counterparty = session.get(
-        Counterparty,
-        counterparty_id,
-    )
-
-    if counterparty is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Контрагент не найден",
-        )
-
-    if counterparty.status == "active":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Контрагент уже активен",
-        )
-
-    counterparty.status = "active"
-
-    session.commit()
-    session.refresh(counterparty)
-
-    return counterparty
 
 
 @router.get(
@@ -198,37 +80,13 @@ def list_counterparties(
         ),
     ] = False,
 ) -> list[Counterparty]:
-    statement = select(Counterparty)
-    if not include_archived:
-        statement = statement.where(
-            Counterparty.status == "active"
+    return service.list_counterparties(
+        session=session,
+        search=search,
+        limit=limit,
+        offset=offset,
+        include_archived=include_archived,
     )
-
-    if search:
-        normalized_search = search.strip()
-
-        statement = statement.where(
-            or_(
-                Counterparty.unp.ilike(
-                    f"%{normalized_search}%"
-                ),
-                Counterparty.name.ilike(
-                    f"%{normalized_search}%"
-                ),
-                Counterparty.short_name.ilike(
-                    f"%{normalized_search}%"
-                ),
-            )
-        )
-
-    statement = (
-        statement
-        .order_by(Counterparty.id.desc())
-        .offset(offset)
-        .limit(limit)
-    )
-
-    return list(session.scalars(statement).all())
 
 
 @router.get(
@@ -239,19 +97,93 @@ def get_counterparty_by_unp(
     unp: str,
     session: DatabaseSession,
 ) -> Counterparty:
-    counterparty = session.scalar(
-        select(Counterparty).where(
-            Counterparty.unp == unp
+    try:
+        return service.get_counterparty_by_unp(
+            session=session,
+            unp=unp,
         )
-    )
-
-    if counterparty is None:
+    except service.CounterpartyNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Контрагент не найден",
         )
 
-    return counterparty
+
+@router.patch(
+    "/{counterparty_id}",
+    response_model=CounterpartyRead,
+)
+def update_counterparty(
+    counterparty_id: int,
+    payload: CounterpartyUpdate,
+    session: DatabaseSession,
+) -> Counterparty:
+    try:
+        return service.update_counterparty(
+            session=session,
+            counterparty_id=counterparty_id,
+            payload=payload,
+        )
+    except service.CounterpartyNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Контрагент не найден",
+        )
+    except service.EmptyCounterpartyUpdateError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Не передано ни одного поля для изменения",
+        )
+
+
+@router.post(
+    "/{counterparty_id}/archive",
+    response_model=CounterpartyRead,
+)
+def archive_counterparty(
+    counterparty_id: int,
+    session: DatabaseSession,
+) -> Counterparty:
+    try:
+        return service.archive_counterparty(
+            session=session,
+            counterparty_id=counterparty_id,
+        )
+    except service.CounterpartyNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Контрагент не найден",
+        )
+    except service.CounterpartyAlreadyArchivedError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Контрагент уже находится в архиве",
+        )
+
+
+@router.post(
+    "/{counterparty_id}/restore",
+    response_model=CounterpartyRead,
+)
+def restore_counterparty(
+    counterparty_id: int,
+    session: DatabaseSession,
+) -> Counterparty:
+    try:
+        return service.restore_counterparty(
+            session=session,
+            counterparty_id=counterparty_id,
+        )
+    except service.CounterpartyNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Контрагент не найден",
+        )
+    except service.CounterpartyAlreadyActiveError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Контрагент уже активен",
+        )
 
 
 @router.get(
@@ -262,15 +194,13 @@ def get_counterparty(
     counterparty_id: int,
     session: DatabaseSession,
 ) -> Counterparty:
-    counterparty = session.get(
-        Counterparty,
-        counterparty_id,
-    )
-
-    if counterparty is None:
+    try:
+        return service.get_counterparty_by_id(
+            session=session,
+            counterparty_id=counterparty_id,
+        )
+    except service.CounterpartyNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Контрагент не найден",
         )
-
-    return counterparty
