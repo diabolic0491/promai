@@ -1,0 +1,65 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node.js
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Operating systems
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Local storage
+storage/*
+!storage/.gitkeep
+
+# Uploaded documents
+uploads/
+*.doc
+*.docx
+*.pdf
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+
+# Backups
+backups/
+*.bak
+*.backup
+
+# Certificates and keys
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
