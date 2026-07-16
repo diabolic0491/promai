@@ -56,6 +56,51 @@ class CounterpartyCreate(BaseModel):
 
         normalized = value.strip()
         return normalized or None
+    
+class CounterpartyUpdate(BaseModel):
+    name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=500,
+    )
+
+    short_name: str | None = Field(
+        default=None,
+        max_length=255,
+    )
+
+    legal_address: str | None = Field(
+        default=None,
+        max_length=500,
+    )
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        if value is None:
+            return None
+
+        normalized = value.strip()
+
+        if not normalized:
+            raise ValueError("Наименование не может быть пустым")
+
+        return normalized
+
+    @field_validator("short_name", "legal_address")
+    @classmethod
+    def normalize_optional_text(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        if value is None:
+            return None
+
+        normalized = value.strip()
+        return normalized or None
 
 
 class CounterpartyRead(BaseModel):
