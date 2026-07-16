@@ -44,7 +44,7 @@ services:
       - "${BACKEND_PORT}:8000"
 
     volumes:
-      - ./backend/app:/app/app
+      - ./backend:/app
 
     depends_on:
       postgres:

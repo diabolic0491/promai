@@ -1,8 +1,10 @@
-import psycopg
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import get_settings
+from app.db.session import engine
 
 
 router = APIRouter(tags=["System"])
@@ -16,24 +18,17 @@ def root() -> dict[str, str]:
         "name": settings.app_name,
         "version": settings.app_version,
         "environment": settings.app_environment,
-        "status": "development mode",
+        "status": "running",
     }
 
 
 @router.get("/health")
 def health() -> JSONResponse:
-    settings = get_settings()
-
     try:
-        with psycopg.connect(
-            settings.database_url,
-            connect_timeout=3,
-        ) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT 1")
-                result = cursor.fetchone()
+        with engine.connect() as connection:
+            result = connection.execute(text("SELECT 1")).scalar_one()
 
-        if result != (1,):
+        if result != 1:
             raise RuntimeError("Unexpected database response")
 
         return JSONResponse(
@@ -45,7 +40,7 @@ def health() -> JSONResponse:
             },
         )
 
-    except Exception as error:
+    except (SQLAlchemyError, RuntimeError) as error:
         return JSONResponse(
             status_code=503,
             content={
