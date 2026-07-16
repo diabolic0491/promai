@@ -25,5 +25,23 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+    container_name: promai-backend
+    restart: unless-stopped
+
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+
+    ports:
+      - "${BACKEND_PORT}:8000"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:
