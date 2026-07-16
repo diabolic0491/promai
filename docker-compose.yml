@@ -35,9 +35,16 @@ services:
 
     environment:
       DATABASE_URL: ${DATABASE_URL}
+      APP_NAME: ${APP_NAME}
+      APP_VERSION: ${APP_VERSION}
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT}
+      DEBUG: ${DEBUG}
 
     ports:
       - "${BACKEND_PORT}:8000"
+
+    volumes:
+      - ./backend/app:/app/app
 
     depends_on:
       postgres:
