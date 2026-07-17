@@ -1,16 +1,27 @@
 import {
+  useCallback,
   useEffect,
   useState,
   type FormEvent,
 } from "react";
 
+import { ApiError } from "../../api/client";
 import {
   archiveCounterparty,
   restoreCounterparty,
   updateCounterparty,
 } from "../../api/counterparties";
-import { ApiError } from "../../api/client";
-import type { Counterparty } from "../../types/counterparty";
+import { getContracts } from "../../api/contracts";
+
+import { getContractRoleLabel } from
+  "../../constants/contractRoles";
+
+import type { Contract } from "../../types/contract";
+import type { Counterparty } from
+  "../../types/counterparty";
+
+import { CreateContractModal } from
+  "../contracts/CreateContractModal";
 
 interface CounterpartyDetailsDrawerProps {
   counterparty: Counterparty | null;
@@ -24,11 +35,60 @@ interface FormState {
   legalAddress: string;
 }
 
-const initialFormState: FormState = {
+const emptyForm: FormState = {
   name: "",
   shortName: "",
   legalAddress: "",
 };
+
+function formatDate(value: string): string {
+  return new Date(value).toLocaleDateString("ru-RU");
+}
+
+function formatContractAmount(
+  amount: string | null,
+  currency: string,
+): string {
+  if (!amount) {
+    return "Не указана";
+  }
+
+  return `${Number(amount).toLocaleString("ru-RU", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} ${currency}`;
+}
+
+function getContractStatusLabel(
+  status: string,
+): string {
+  const labels: Record<string, string> = {
+    draft: "Черновик",
+    active: "Действует",
+    completed: "Завершён",
+    terminated: "Расторгнут",
+    archived: "В архиве",
+  };
+
+  return labels[status] ?? status;
+}
+
+function getContractStatusClass(
+  status: string,
+): string {
+  if (status === "active") {
+    return "statusBadgeActive";
+  }
+
+  if (
+    status === "completed" ||
+    status === "archived"
+  ) {
+    return "statusBadgeArchived";
+  }
+
+  return "statusBadgeDraft";
+}
 
 export function CounterpartyDetailsDrawer({
   counterparty,
@@ -36,30 +96,88 @@ export function CounterpartyDetailsDrawer({
   onChanged,
 }: CounterpartyDetailsDrawerProps) {
   const [form, setForm] =
-    useState<FormState>(initialFormState);
+    useState<FormState>(emptyForm);
 
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSaving, setIsSaving] =
+    useState(false);
 
   const [isChangingStatus, setIsChangingStatus] =
     useState(false);
 
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    null,
+  );
+
+  const [contracts, setContracts] = useState<
+    Contract[]
+  >([]);
+
+  const [isContractsLoading, setIsContractsLoading] =
+    useState(false);
+
+  const [contractsError, setContractsError] =
+    useState<string | null>(null);
+
+  const [
+    isContractModalOpen,
+    setIsContractModalOpen,
+  ] = useState(false);
+
+  const loadContracts = useCallback(async () => {
+    if (!counterparty) {
+      setContracts([]);
+      return;
+    }
+
+    setIsContractsLoading(true);
+    setContractsError(null);
+
+    try {
+      const loadedContracts = await getContracts({
+        counterpartyId: counterparty.id,
+        limit: 100,
+      });
+
+      setContracts(loadedContracts);
+    } catch (requestError) {
+      setContractsError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Не удалось загрузить договоры",
+      );
+    } finally {
+      setIsContractsLoading(false);
+    }
+  }, [counterparty]);
 
   useEffect(() => {
     if (!counterparty) {
-      setForm(initialFormState);
+      setForm(emptyForm);
+      setContracts([]);
       setError(null);
+      setContractsError(null);
+      setIsContractModalOpen(false);
       return;
     }
 
     setForm({
       name: counterparty.name,
       shortName: counterparty.short_name ?? "",
-      legalAddress: counterparty.legal_address ?? "",
+      legalAddress:
+        counterparty.legal_address ?? "",
     });
 
     setError(null);
+    setIsContractModalOpen(false);
   }, [counterparty]);
+
+  useEffect(() => {
+    if (!counterparty) {
+      return;
+    }
+
+    void loadContracts();
+  }, [counterparty, loadContracts]);
 
   useEffect(() => {
     if (!counterparty) {
@@ -70,13 +188,18 @@ export function CounterpartyDetailsDrawer({
       if (
         event.key === "Escape" &&
         !isSaving &&
-        !isChangingStatus
+        !isChangingStatus &&
+        !isContractModalOpen
       ) {
         onClose();
       }
     }
 
-    document.addEventListener("keydown", handleEscape);
+    document.addEventListener(
+      "keydown",
+      handleEscape,
+    );
+
     document.body.style.overflow = "hidden";
 
     return () => {
@@ -91,6 +214,7 @@ export function CounterpartyDetailsDrawer({
     counterparty,
     isSaving,
     isChangingStatus,
+    isContractModalOpen,
     onClose,
   ]);
 
@@ -98,8 +222,11 @@ export function CounterpartyDetailsDrawer({
     return null;
   }
 
-  const currentCounterparty = counterparty;
-  const isBusy = isSaving || isChangingStatus;
+  const currentCounterparty: Counterparty =
+    counterparty;
+
+  const isBusy =
+    isSaving || isChangingStatus;
 
   function updateField(
     field: keyof FormState,
@@ -119,7 +246,9 @@ export function CounterpartyDetailsDrawer({
     const name = form.name.trim();
 
     if (!name) {
-      setError("Полное наименование обязательно");
+      setError(
+        "Полное наименование обязательно",
+      );
       return;
     }
 
@@ -131,7 +260,8 @@ export function CounterpartyDetailsDrawer({
         currentCounterparty.id,
         {
           name,
-          short_name: form.shortName.trim() || null,
+          short_name:
+            form.shortName.trim() || null,
           legal_address:
             form.legalAddress.trim() || null,
         },
@@ -150,13 +280,13 @@ export function CounterpartyDetailsDrawer({
   }
 
   async function handleStatusChange() {
-    const action =
-      currentCounterparty.status === "active"
-        ? "переместить контрагента в архив"
-        : "восстановить контрагента";
+    const isArchiving =
+      currentCounterparty.status === "active";
 
     const confirmed = window.confirm(
-      `Вы действительно хотите ${action}?`,
+      isArchiving
+        ? "Переместить контрагента в архив?"
+        : "Восстановить контрагента из архива?",
     );
 
     if (!confirmed) {
@@ -167,14 +297,13 @@ export function CounterpartyDetailsDrawer({
     setError(null);
 
     try {
-      const changed =
-        currentCounterparty.status === "active"
-          ? await archiveCounterparty(
-              currentCounterparty.id,
-            )
-          : await restoreCounterparty(
-              currentCounterparty.id,
-            );
+      const changed = isArchiving
+        ? await archiveCounterparty(
+            currentCounterparty.id,
+          )
+        : await restoreCounterparty(
+            currentCounterparty.id,
+          );
 
       onChanged(changed);
     } catch (requestError) {
@@ -195,7 +324,8 @@ export function CounterpartyDetailsDrawer({
       onMouseDown={(event) => {
         if (
           event.target === event.currentTarget &&
-          !isBusy
+          !isBusy &&
+          !isContractModalOpen
         ) {
           onClose();
         }
@@ -223,8 +353,10 @@ export function CounterpartyDetailsDrawer({
             type="button"
             className="modalCloseButton"
             onClick={onClose}
-            disabled={isBusy}
-            aria-label="Закрыть"
+            disabled={
+              isBusy || isContractModalOpen
+            }
+            aria-label="Закрыть карточку"
           >
             ×
           </button>
@@ -239,7 +371,9 @@ export function CounterpartyDetailsDrawer({
 
           <div>
             <span>УНП</span>
-            <strong>{currentCounterparty.unp}</strong>
+            <strong>
+              {currentCounterparty.unp}
+            </strong>
           </div>
 
           <span
@@ -267,7 +401,10 @@ export function CounterpartyDetailsDrawer({
             <textarea
               value={form.name}
               onChange={(event) =>
-                updateField("name", event.target.value)
+                updateField(
+                  "name",
+                  event.target.value,
+                )
               }
               rows={3}
               maxLength={500}
@@ -314,9 +451,9 @@ export function CounterpartyDetailsDrawer({
               <span>Создан</span>
 
               <strong>
-                {new Date(
+                {formatDate(
                   currentCounterparty.created_at,
-                ).toLocaleDateString("ru-RU")}
+                )}
               </strong>
             </div>
 
@@ -324,15 +461,18 @@ export function CounterpartyDetailsDrawer({
               <span>Обновлён</span>
 
               <strong>
-                {new Date(
+                {formatDate(
                   currentCounterparty.updated_at,
-                ).toLocaleDateString("ru-RU")}
+                )}
               </strong>
             </div>
           </div>
 
           {error && (
-            <div className="formError" role="alert">
+            <div
+              className="formError"
+              role="alert"
+            >
               {error}
             </div>
           )}
@@ -341,16 +481,20 @@ export function CounterpartyDetailsDrawer({
             <button
               type="button"
               className={
-                currentCounterparty.status === "active"
+                currentCounterparty.status ===
+                "active"
                   ? "dangerButton"
                   : "secondaryButton"
               }
-              onClick={() => void handleStatusChange()}
+              onClick={() =>
+                void handleStatusChange()
+              }
               disabled={isBusy}
             >
               {isChangingStatus
                 ? "Выполняем…"
-                : currentCounterparty.status === "active"
+                : currentCounterparty.status ===
+                    "active"
                   ? "В архив"
                   : "Восстановить"}
             </button>
@@ -368,23 +512,186 @@ export function CounterpartyDetailsDrawer({
         </form>
 
         <section className="drawerContracts">
-          <div>
-            <p className="modalEyebrow">Договоры</p>
-            <h3>Договоры контрагента</h3>
+          <div className="drawerSectionHeader">
+            <div>
+              <p className="modalEyebrow">
+                Договорная работа
+              </p>
+
+              <h3>
+                Договоры с контрагентом
+              </h3>
+            </div>
+
+            <button
+              type="button"
+              className="secondaryButton"
+              onClick={() =>
+                setIsContractModalOpen(true)
+              }
+              disabled={
+                currentCounterparty.status ===
+                "archived"
+              }
+            >
+              + Новый договор
+            </button>
           </div>
 
-          <div className="drawerEmptyState">
-            <strong>
-              Раздел договоров будет подключён следующим этапом
-            </strong>
+          {currentCounterparty.status ===
+            "archived" && (
+            <div className="drawerNotice">
+              Сначала восстановите контрагента
+              из архива, чтобы создать новый
+              договор.
+            </div>
+          )}
 
-            <span>
-              Здесь появятся связанные договоры и кнопка
-              создания нового договора.
-            </span>
-          </div>
+          {isContractsLoading && (
+            <div className="drawerEmptyState">
+              <span className="loader" />
+              <span>Загружаем договоры…</span>
+            </div>
+          )}
+
+          {!isContractsLoading &&
+            contractsError && (
+              <div
+                className="drawerContractsError"
+                role="alert"
+              >
+                <div>
+                  <strong>
+                    Не удалось загрузить договоры
+                  </strong>
+
+                  <span>{contractsError}</span>
+                </div>
+
+                <button
+                  type="button"
+                  className="secondaryButton"
+                  onClick={() =>
+                    void loadContracts()
+                  }
+                >
+                  Повторить
+                </button>
+              </div>
+            )}
+
+          {!isContractsLoading &&
+            !contractsError &&
+            contracts.length === 0 && (
+              <div className="drawerEmptyState">
+                <strong>
+                  Договоров пока нет
+                </strong>
+
+                <span>
+                  Создайте первый договор с этим
+                  контрагентом.
+                </span>
+              </div>
+            )}
+
+          {!isContractsLoading &&
+            !contractsError &&
+            contracts.length > 0 && (
+              <div className="counterpartyContractsList">
+                {contracts.map((contract) => (
+                  <article
+                    key={contract.id}
+                    className="counterpartyContractCard"
+                  >
+                    <div className="counterpartyContractHeader">
+                      <div>
+                        <strong>
+                          № {contract.number}
+                        </strong>
+
+                        <span>
+                          {contract.title}
+                        </span>
+                      </div>
+
+                      <span
+                        className={`statusBadge ${getContractStatusClass(
+                          contract.status,
+                        )}`}
+                      >
+                        {getContractStatusLabel(
+                          contract.status,
+                        )}
+                      </span>
+                    </div>
+
+                    <div className="counterpartyContractMeta">
+                      <span>
+                        Дата:{" "}
+                        <strong>
+                          {formatDate(
+                            contract.contract_date,
+                          )}
+                        </strong>
+                      </span>
+
+                      <span>
+                        Сумма:{" "}
+                        <strong>
+                          {formatContractAmount(
+                            contract.amount,
+                            contract.currency,
+                          )}
+                        </strong>
+                      </span>
+                    </div>
+
+                    <div className="counterpartyContractRoles">
+                      <span>
+                        Промас Инжиниринг
+
+                        <strong>
+                          {getContractRoleLabel(
+                            contract.owner_role,
+                          )}
+                        </strong>
+                      </span>
+
+                      <span>
+                        Контрагент
+
+                        <strong>
+                          {getContractRoleLabel(
+                            contract.counterparty_role,
+                          )}
+                        </strong>
+                      </span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
         </section>
       </aside>
+
+      <CreateContractModal
+        isOpen={isContractModalOpen}
+        initialCounterpartyId={
+          currentCounterparty.id
+        }
+        onClose={() =>
+          setIsContractModalOpen(false)
+        }
+        onCreated={(createdContract) => {
+          setContracts((current) => [
+            createdContract,
+            ...current,
+          ]);
+
+          setIsContractModalOpen(false);
+        }}
+      />
     </div>
   );
 }
