@@ -11,9 +11,16 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import (
+    Mapped,
+    mapped_column,
+    relationship,
+)
 
 from app.db.base import Base
+from app.models.contract_party_role import (
+    ContractPartyRole,
+)
 
 
 if TYPE_CHECKING:
@@ -85,6 +92,20 @@ class Contract(Base):
     notes: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
+    )
+
+    owner_role: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=ContractPartyRole.SUPPLIER.value,
+        server_default=ContractPartyRole.SUPPLIER.value,
+    )
+
+    counterparty_role: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=ContractPartyRole.BUYER.value,
+        server_default=ContractPartyRole.BUYER.value,
     )
 
     created_at: Mapped[datetime] = mapped_column(
