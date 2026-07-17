@@ -1,28 +1,42 @@
-import { useState, type ReactNode } from "react";
+import {
+  useState,
+  type ReactNode,
+} from "react";
+
+import type { AppPage } from "../../types/navigation";
+
 import "./AppLayout.css";
 
-type Section = "dashboard" | "counterparties" | "contracts";
 
-type AppLayoutProps = {
-  activeSection: Section;
-  onSectionChange: (section: Section) => void;
+interface AppLayoutProps {
+  currentPage: AppPage;
+  onPageChange: (page: AppPage) => void;
   children: ReactNode;
-};
+}
 
-const navigationItems: Array<{
-  id: Section;
+
+interface NavigationItem {
+  id: AppPage;
   label: string;
   icon: string;
-}> = [
+}
+
+
+const navigationItems: NavigationItem[] = [
   {
     id: "dashboard",
     label: "Главная",
     icon: "⌂",
   },
   {
+    id: "organization",
+    label: "Наша компания",
+    icon: "▣",
+  },
+  {
     id: "counterparties",
     label: "Контрагенты",
-    icon: "◫",
+    icon: "▦",
   },
   {
     id: "contracts",
@@ -31,109 +45,201 @@ const navigationItems: Array<{
   },
 ];
 
+
+const pageTitles: Record<AppPage, string> = {
+  dashboard: "Главная",
+  organization: "Наша компания",
+  counterparties: "Контрагенты",
+  contracts: "Договоры",
+};
+
+
 export function AppLayout({
-  activeSection,
-  onSectionChange,
+  currentPage,
+  onPageChange,
   children,
 }: AppLayoutProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] =
+    useState(false);
 
-  function selectSection(section: Section) {
-    onSectionChange(section);
-    setSidebarOpen(false);
+  function toggleSidebar() {
+    setIsSidebarCollapsed((current) => !current);
   }
 
   return (
-    <div className="appShell">
+    <div
+      className={
+        isSidebarCollapsed
+          ? "appShell appShellCollapsed"
+          : "appShell"
+      }
+    >
       <aside
-        className={`sidebar ${sidebarOpen ? "sidebarOpen" : ""}`}
+        className={
+          isSidebarCollapsed
+            ? "sidebar sidebarCollapsed"
+            : "sidebar"
+        }
       >
+        <div className="sidebarGlow" />
+
         <div className="brand">
-          <img
-            className="brandLogo"
-            src="/branding/promai-logo.svg"
-            alt="PromAI"
-          />
+          {!isSidebarCollapsed && (
+            <>
+              <img
+                className="brandLogo"
+                src="/branding/promai-logo.svg"
+                alt="PromAI"
+              />
 
-          <span className="brandSubtitle">
-            Корпоративная CRM
-          </span>
-        </div>
-
-        <nav
-          className="navigation"
-          aria-label="Основная навигация"
-        >
-          {navigationItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`navigationItem ${
-                activeSection === item.id
-                  ? "navigationItemActive"
-                  : ""
-              }`}
-              onClick={() => selectSection(item.id)}
-            >
-              <span
-                className="navigationIcon"
-                aria-hidden="true"
-              >
-                {item.icon}
+              <span className="brandSubtitle">
+                Корпоративная CRM-система
               </span>
+            </>
+          )}
 
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </nav>
-
-        <div className="sidebarFooter">
-          <div className="systemStatus">
-            <span className="systemStatusDot" />
-            Система работает
-          </div>
-
-          <span className="version">PromAI MVP · 0.1.0</span>
+          {isSidebarCollapsed && (
+            <div
+              className="collapsedBrand"
+              title="PromAI"
+              aria-label="PromAI"
+            >
+              AI
+            </div>
+          )}
         </div>
-      </aside>
 
-      {sidebarOpen && (
         <button
           type="button"
-          className="sidebarBackdrop"
-          aria-label="Закрыть меню"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+          className="sidebarToggle"
+          onClick={toggleSidebar}
+          aria-label={
+            isSidebarCollapsed
+              ? "Развернуть боковую панель"
+              : "Свернуть боковую панель"
+          }
+          title={
+            isSidebarCollapsed
+              ? "Развернуть меню"
+              : "Свернуть меню"
+          }
+        >
+          {isSidebarCollapsed ? "›" : "‹"}
+        </button>
 
-      <div className="mainArea">
-        <header className="topbar">
-          <button
-            type="button"
-            className="menuButton"
-            aria-label="Открыть меню"
-            onClick={() => setSidebarOpen(true)}
-          >
-            ☰
-          </button>
+        <nav
+          className="nav"
+          aria-label="Основная навигация"
+        >
+          {!isSidebarCollapsed && (
+            <span className="navLabel">
+              Навигация
+            </span>
+          )}
 
-          <div>
-            <span className="topbarCaption">
+          {navigationItems.map((item) => {
+            const isActive =
+              currentPage === item.id;
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={
+                  isActive
+                    ? "navItem navItemActive"
+                    : "navItem"
+                }
+                onClick={() => onPageChange(item.id)}
+                aria-current={
+                  isActive ? "page" : undefined
+                }
+                title={
+                  isSidebarCollapsed
+                    ? item.label
+                    : undefined
+                }
+              >
+                <span
+                  className="navIcon"
+                  aria-hidden="true"
+                >
+                  {item.icon}
+                </span>
+
+                {!isSidebarCollapsed && (
+                  <span className="navItemText">
+                    {item.label}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {!isSidebarCollapsed && (
+          <div className="sidebarFooter">
+            <span className="sidebarFooterLabel">
+              Рабочая область
+            </span>
+
+            <strong>
               ООО «Промас Инжиниринг»
+            </strong>
+
+            <span className="sidebarStatus">
+              <span
+                className="sidebarStatusDot"
+                aria-hidden="true"
+              />
+
+              Система активна
             </span>
           </div>
+        )}
+      </aside>
 
-          <div className="userBadge">
-            <span className="userAvatar">П</span>
+      <div className="workspace">
+        <header className="topbar">
+          <div className="topbarPage">
+            <button
+              type="button"
+              className="mobileSidebarToggle"
+              onClick={toggleSidebar}
+              aria-label="Открыть или закрыть меню"
+            >
+              ☰
+            </button>
 
             <div>
-              <strong>Пользователь</strong>
-              <span>Администратор</span>
+              <span className="topbarLabel">
+                PromAI
+              </span>
+
+              <strong className="topbarTitle">
+                {pageTitles[currentPage]}
+              </strong>
+            </div>
+          </div>
+
+          <div className="topbarRight">
+            <span className="pilotBadge">
+              Пилотная версия
+            </span>
+
+            <div
+              className="userAvatar"
+              title="ООО «Промас Инжиниринг»"
+              aria-label="ООО «Промас Инжиниринг»"
+            >
+              ПИ
             </div>
           </div>
         </header>
 
-        <main className="pageContent">{children}</main>
+        <main className="mainContent">
+          {children}
+        </main>
       </div>
     </div>
   );

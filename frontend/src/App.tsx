@@ -1,31 +1,49 @@
 import { useState } from "react";
-import "./App.css";
 
 import { AppLayout } from "./components/layout/AppLayout";
-import { ContractsPage } from "./pages/ContractsPage";
-import { CounterpartiesPage } from "./pages/CounterpartiesPage";
+
 import { DashboardPage } from "./pages/DashboardPage";
+import { OrganizationPage } from "./pages/OrganizationPage";
+import { CounterpartiesPage } from "./pages/CounterpartiesPage";
+import { ContractsPage } from "./pages/ContractsPage";
 
-type Section = "dashboard" | "counterparties" | "contracts";
+import "./App.css";
 
-function App() {
-  const [activeSection, setActiveSection] =
-    useState<Section>("dashboard");
+
+export type AppPage =
+  | "dashboard"
+  | "organization"
+  | "counterparties"
+  | "contracts";
+
+
+export default function App() {
+  const [currentPage, setCurrentPage] =
+    useState<AppPage>("dashboard");
+
+  function renderCurrentPage() {
+    switch (currentPage) {
+      case "organization":
+        return <OrganizationPage />;
+
+      case "counterparties":
+        return <CounterpartiesPage />;
+
+      case "contracts":
+        return <ContractsPage />;
+
+      case "dashboard":
+      default:
+        return <DashboardPage />;
+    }
+  }
 
   return (
     <AppLayout
-      activeSection={activeSection}
-      onSectionChange={setActiveSection}
+      currentPage={currentPage}
+      onPageChange={setCurrentPage}
     >
-      {activeSection === "dashboard" && <DashboardPage />}
-
-      {activeSection === "counterparties" && (
-        <CounterpartiesPage />
-      )}
-
-      {activeSection === "contracts" && <ContractsPage />}
+      {renderCurrentPage()}
     </AppLayout>
   );
 }
-
-export default App;
