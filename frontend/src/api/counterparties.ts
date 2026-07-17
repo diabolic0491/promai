@@ -51,3 +51,44 @@ export async function createCounterparty(
     body: JSON.stringify(payload),
   });
 }
+
+export interface UpdateCounterpartyPayload {
+  name?: string;
+  short_name?: string | null;
+  legal_address?: string | null;
+}
+
+export async function updateCounterparty(
+  counterpartyId: number,
+  payload: UpdateCounterpartyPayload,
+): Promise<Counterparty> {
+  return apiRequest<Counterparty>(
+    `/counterparties/${counterpartyId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function archiveCounterparty(
+  counterpartyId: number,
+): Promise<Counterparty> {
+  return apiRequest<Counterparty>(
+    `/counterparties/${counterpartyId}/archive`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function restoreCounterparty(
+  counterpartyId: number,
+): Promise<Counterparty> {
+  return apiRequest<Counterparty>(
+    `/counterparties/${counterpartyId}/restore`,
+    {
+      method: "POST",
+    },
+  );
+}

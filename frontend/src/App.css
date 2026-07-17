@@ -682,3 +682,232 @@
     width: 100%;
   }
 }
+
+.drawerBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(4px);
+}
+
+.detailsDrawer {
+  width: min(620px, 100%);
+  height: 100vh;
+  overflow-y: auto;
+  background: #ffffff;
+  box-shadow: -25px 0 80px rgba(15, 23, 42, 0.24);
+  animation: drawerEnter 220ms ease-out;
+}
+
+.drawerHeader {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 26px 28px 20px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(14px);
+}
+
+.drawerHeader h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+.counterpartyIdentity {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  margin: 24px 28px 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: #f8fafc;
+}
+
+.counterpartyLargeAvatar {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border-radius: 15px;
+  color: #ffffff;
+  background: var(--brand-action-gradient);
+  font-size: 21px;
+  font-weight: 800;
+}
+
+.counterpartyIdentity div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.counterpartyIdentity div span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.counterpartyIdentity div strong {
+  color: var(--text-primary);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.drawerForm {
+  display: grid;
+  gap: 18px;
+  padding: 24px 28px 28px;
+}
+
+.metadataGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.metadataGrid div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: #f8fafc;
+}
+
+.metadataGrid span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.metadataGrid strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.drawerActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.dangerButton {
+  min-height: 42px;
+  padding: 9px 16px;
+  border: 1px solid #fecaca;
+  border-radius: 11px;
+  color: #b42318;
+  background: #fff7f7;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.dangerButton:hover {
+  border-color: #f87171;
+  background: #fff1f2;
+}
+
+.dangerButton:disabled,
+.drawerActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.drawerContracts {
+  padding: 26px 28px 38px;
+  border-top: 8px solid #f1f5f9;
+}
+
+.drawerContracts h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 20px;
+}
+
+.drawerEmptyState {
+  display: flex;
+  min-height: 150px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 24px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 16px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.drawerEmptyState strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.drawerEmptyState span {
+  max-width: 400px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@keyframes drawerEnter {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 600px) {
+  .detailsDrawer {
+    width: 100%;
+  }
+
+  .drawerHeader,
+  .drawerForm,
+  .drawerContracts {
+    padding-inline: 20px;
+  }
+
+  .counterpartyIdentity {
+    grid-template-columns: auto 1fr;
+    margin-inline: 20px;
+  }
+
+  .counterpartyIdentity .statusBadge {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .drawerActions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .drawerActions button {
+    width: 100%;
+  }
+
+  .metadataGrid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -6,15 +6,24 @@ import {
 } from "react";
 
 import { getCounterparties } from "../api/counterparties";
+import { CounterpartyDetailsDrawer } from
+  "../components/counterparties/CounterpartyDetailsDrawer";
 import { CreateCounterpartyModal } from
   "../components/counterparties/CreateCounterpartyModal";
-import type { Counterparty } from
-  "../types/counterparty";
+import type { Counterparty } from "../types/counterparty";
 
 export function CounterpartiesPage() {
   const [counterparties, setCounterparties] = useState<
     Counterparty[]
   >([]);
+
+  const [
+    selectedCounterparty,
+    setSelectedCounterparty,
+  ] = useState<Counterparty | null>(null);
+
+  const [isCreateModalOpen, setIsCreateModalOpen] =
+    useState(false);
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -22,14 +31,8 @@ export function CounterpartiesPage() {
   const [includeArchived, setIncludeArchived] =
     useState(false);
 
-  const [isCreateModalOpen, setIsCreateModalOpen] =
-    useState(false);
-
   const [isLoading, setIsLoading] = useState(true);
-
-  const [error, setError] = useState<string | null>(
-    null,
-  );
+  const [error, setError] = useState<string | null>(null);
 
   const loadCounterparties = useCallback(async () => {
     setIsLoading(true);
@@ -40,7 +43,6 @@ export function CounterpartiesPage() {
         search,
         includeArchived,
         limit: 100,
-        offset: 0,
       });
 
       setCounterparties(result);
@@ -72,10 +74,45 @@ export function CounterpartiesPage() {
     setSearch("");
   }
 
-  function handleCounterpartyCreated(
-    _counterparty: Counterparty,
+  function handleCounterpartyChanged(
+    changedCounterparty: Counterparty,
   ) {
-    void loadCounterparties();
+    const shouldRemoveFromCurrentList =
+      changedCounterparty.status === "archived" &&
+      !includeArchived;
+
+    if (shouldRemoveFromCurrentList) {
+      setSelectedCounterparty(null);
+    } else {
+      setSelectedCounterparty(changedCounterparty);
+    }
+
+    setCounterparties((current) => {
+      if (shouldRemoveFromCurrentList) {
+        return current.filter(
+          (item) =>
+            item.id !== changedCounterparty.id,
+        );
+      }
+
+      const existsInCurrentList = current.some(
+        (item) =>
+          item.id === changedCounterparty.id,
+      );
+
+      if (!existsInCurrentList) {
+        return [
+          changedCounterparty,
+          ...current,
+        ];
+      }
+
+      return current.map((item) =>
+        item.id === changedCounterparty.id
+          ? changedCounterparty
+          : item,
+      );
+    });
   }
 
   return (
@@ -151,7 +188,6 @@ export function CounterpartiesPage() {
         {isLoading && (
           <div className="tableState">
             <span className="loader" />
-
             <span>Загружаем контрагентов…</span>
           </div>
         )}
@@ -183,16 +219,6 @@ export function CounterpartiesPage() {
                 Добавьте первого контрагента или измените
                 условия поиска.
               </span>
-
-              <button
-                type="button"
-                className="primaryButton"
-                onClick={() =>
-                  setIsCreateModalOpen(true)
-                }
-              >
-                + Добавить контрагента
-              </button>
             </div>
           )}
 
@@ -203,13 +229,6 @@ export function CounterpartiesPage() {
               <div className="tableSummary">
                 Найдено:{" "}
                 <strong>{counterparties.length}</strong>
-
-                {search && (
-                  <span>
-                    {" "}
-                    по запросу «{search}»
-                  </span>
-                )}
               </div>
 
               <div className="tableContainer">
@@ -225,70 +244,72 @@ export function CounterpartiesPage() {
                   </thead>
 
                   <tbody>
-                    {counterparties.map(
-                      (counterparty) => (
-                        <tr key={counterparty.id}>
-                          <td>
-                            <div className="companyCell">
-                              <span className="companyAvatar">
-                                {counterparty.name
-                                  .charAt(0)
-                                  .toUpperCase()}
-                              </span>
-
-                              <div>
-                                <strong>
-                                  {counterparty.short_name ||
-                                    counterparty.name}
-                                </strong>
-
-                                {counterparty.short_name && (
-                                  <span>
-                                    {counterparty.name}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-
-                          <td className="unpCell">
-                            {counterparty.unp}
-                          </td>
-
-                          <td>
-                            {counterparty.legal_address ||
-                              "—"}
-                          </td>
-
-                          <td>
-                            <span
-                              className={`statusBadge ${
-                                counterparty.status ===
-                                "active"
-                                  ? "statusBadgeActive"
-                                  : "statusBadgeArchived"
-                              }`}
-                            >
-                              {counterparty.status ===
-                              "active"
-                                ? "Активен"
-                                : "В архиве"}
+                    {counterparties.map((counterparty) => (
+                      <tr key={counterparty.id}>
+                        <td>
+                          <div className="companyCell">
+                            <span className="companyAvatar">
+                              {counterparty.name
+                                .charAt(0)
+                                .toUpperCase()}
                             </span>
-                          </td>
 
-                          <td className="actionsCell">
-                            <button
-                              type="button"
-                              className="rowAction"
-                              aria-label={`Открыть ${counterparty.name}`}
-                              title="Открыть карточку"
-                            >
-                              →
-                            </button>
-                          </td>
-                        </tr>
-                      ),
-                    )}
+                            <div>
+                              <strong>
+                                {counterparty.short_name ||
+                                  counterparty.name}
+                              </strong>
+
+                              {counterparty.short_name && (
+                                <span>
+                                  {counterparty.name}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="unpCell">
+                          {counterparty.unp}
+                        </td>
+
+                        <td>
+                          {counterparty.legal_address || "—"}
+                        </td>
+
+                        <td>
+                          <span
+                            className={`statusBadge ${
+                              counterparty.status === "active"
+                                ? "statusBadgeActive"
+                                : "statusBadgeArchived"
+                            }`}
+                          >
+                            {counterparty.status === "active"
+                              ? "Активен"
+                              : "В архиве"}
+                          </span>
+                        </td>
+
+                        <td className="actionsCell">
+                          <button
+                            type="button"
+                            className="rowAction"
+                            aria-label={
+                              `Открыть ${counterparty.name}`
+                            }
+                            title="Открыть карточку"
+                            onClick={() =>
+                              setSelectedCounterparty(
+                                counterparty,
+                              )
+                            }
+                          >
+                            →
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -299,7 +320,20 @@ export function CounterpartiesPage() {
       <CreateCounterpartyModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        onCreated={handleCounterpartyCreated}
+        onCreated={(createdCounterparty) => {
+          setIsCreateModalOpen(false);
+
+          setCounterparties((current) => [
+            createdCounterparty,
+            ...current,
+          ]);
+        }}
+      />
+
+      <CounterpartyDetailsDrawer
+        counterparty={selectedCounterparty}
+        onClose={() => setSelectedCounterparty(null)}
+        onChanged={handleCounterpartyChanged}
       />
     </section>
   );
