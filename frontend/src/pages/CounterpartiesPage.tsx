@@ -6,7 +6,10 @@ import {
 } from "react";
 
 import { getCounterparties } from "../api/counterparties";
-import type { Counterparty } from "../types/counterparty";
+import { CreateCounterpartyModal } from
+  "../components/counterparties/CreateCounterpartyModal";
+import type { Counterparty } from
+  "../types/counterparty";
 
 export function CounterpartiesPage() {
   const [counterparties, setCounterparties] = useState<
@@ -15,11 +18,18 @@ export function CounterpartiesPage() {
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+
   const [includeArchived, setIncludeArchived] =
     useState(false);
 
+  const [isCreateModalOpen, setIsCreateModalOpen] =
+    useState(false);
+
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  const [error, setError] = useState<string | null>(
+    null,
+  );
 
   const loadCounterparties = useCallback(async () => {
     setIsLoading(true);
@@ -29,6 +39,8 @@ export function CounterpartiesPage() {
       const result = await getCounterparties({
         search,
         includeArchived,
+        limit: 100,
+        offset: 0,
       });
 
       setCounterparties(result);
@@ -60,19 +72,31 @@ export function CounterpartiesPage() {
     setSearch("");
   }
 
+  function handleCounterpartyCreated(
+    _counterparty: Counterparty,
+  ) {
+    void loadCounterparties();
+  }
+
   return (
     <section className="page">
       <div className="pageHeader">
         <div>
           <p className="pageEyebrow">Справочник</p>
+
           <h1>Контрагенты</h1>
+
           <p>
             Компании и организации, с которыми работает
             предприятие.
           </p>
         </div>
 
-        <button type="button" className="primaryButton">
+        <button
+          type="button"
+          className="primaryButton"
+          onClick={() => setIsCreateModalOpen(true)}
+        >
           + Новый контрагент
         </button>
       </div>
@@ -127,7 +151,8 @@ export function CounterpartiesPage() {
         {isLoading && (
           <div className="tableState">
             <span className="loader" />
-            Загружаем контрагентов…
+
+            <span>Загружаем контрагентов…</span>
           </div>
         )}
 
@@ -153,10 +178,21 @@ export function CounterpartiesPage() {
           counterparties.length === 0 && (
             <div className="tableState">
               <strong>Контрагенты не найдены</strong>
+
               <span>
                 Добавьте первого контрагента или измените
                 условия поиска.
               </span>
+
+              <button
+                type="button"
+                className="primaryButton"
+                onClick={() =>
+                  setIsCreateModalOpen(true)
+                }
+              >
+                + Добавить контрагента
+              </button>
             </div>
           )}
 
@@ -167,6 +203,13 @@ export function CounterpartiesPage() {
               <div className="tableSummary">
                 Найдено:{" "}
                 <strong>{counterparties.length}</strong>
+
+                {search && (
+                  <span>
+                    {" "}
+                    по запросу «{search}»
+                  </span>
+                )}
               </div>
 
               <div className="tableContainer">
@@ -182,71 +225,82 @@ export function CounterpartiesPage() {
                   </thead>
 
                   <tbody>
-                    {counterparties.map((counterparty) => (
-                      <tr key={counterparty.id}>
-                        <td>
-                          <div className="companyCell">
-                            <span className="companyAvatar">
-                              {counterparty.name
-                                .charAt(0)
-                                .toUpperCase()}
-                            </span>
+                    {counterparties.map(
+                      (counterparty) => (
+                        <tr key={counterparty.id}>
+                          <td>
+                            <div className="companyCell">
+                              <span className="companyAvatar">
+                                {counterparty.name
+                                  .charAt(0)
+                                  .toUpperCase()}
+                              </span>
 
-                            <div>
-                              <strong>
-                                {counterparty.short_name ||
-                                  counterparty.name}
-                              </strong>
+                              <div>
+                                <strong>
+                                  {counterparty.short_name ||
+                                    counterparty.name}
+                                </strong>
 
-                              {counterparty.short_name && (
-                                <span>
-                                  {counterparty.name}
-                                </span>
-                              )}
+                                {counterparty.short_name && (
+                                  <span>
+                                    {counterparty.name}
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        </td>
+                          </td>
 
-                        <td className="unpCell">
-                          {counterparty.unp}
-                        </td>
+                          <td className="unpCell">
+                            {counterparty.unp}
+                          </td>
 
-                        <td>
-                          {counterparty.legal_address || "—"}
-                        </td>
+                          <td>
+                            {counterparty.legal_address ||
+                              "—"}
+                          </td>
 
-                        <td>
-                          <span
-                            className={`statusBadge ${
-                              counterparty.status === "active"
-                                ? "statusBadgeActive"
-                                : "statusBadgeArchived"
-                            }`}
-                          >
-                            {counterparty.status === "active"
-                              ? "Активен"
-                              : "В архиве"}
-                          </span>
-                        </td>
+                          <td>
+                            <span
+                              className={`statusBadge ${
+                                counterparty.status ===
+                                "active"
+                                  ? "statusBadgeActive"
+                                  : "statusBadgeArchived"
+                              }`}
+                            >
+                              {counterparty.status ===
+                              "active"
+                                ? "Активен"
+                                : "В архиве"}
+                            </span>
+                          </td>
 
-                        <td className="actionsCell">
-                          <button
-                            type="button"
-                            className="rowAction"
-                            aria-label={`Открыть ${counterparty.name}`}
-                            title="Открыть карточку"
-                          >
-                            →
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                          <td className="actionsCell">
+                            <button
+                              type="button"
+                              className="rowAction"
+                              aria-label={`Открыть ${counterparty.name}`}
+                              title="Открыть карточку"
+                            >
+                              →
+                            </button>
+                          </td>
+                        </tr>
+                      ),
+                    )}
                   </tbody>
                 </table>
               </div>
             </>
           )}
       </div>
+
+      <CreateCounterpartyModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onCreated={handleCounterpartyCreated}
+      />
     </section>
   );
 }
