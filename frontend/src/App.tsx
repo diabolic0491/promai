@@ -1,23 +1,30 @@
+import { useState } from "react";
 import "./App.css";
 
+import { AppLayout } from "./components/layout/AppLayout";
+import { ContractsPage } from "./pages/ContractsPage";
+import { CounterpartiesPage } from "./pages/CounterpartiesPage";
+import { DashboardPage } from "./pages/DashboardPage";
+
+type Section = "dashboard" | "counterparties" | "contracts";
+
 function App() {
+  const [activeSection, setActiveSection] =
+    useState<Section>("dashboard");
+
   return (
-    <main className="app">
-      <section className="hero">
-        <p className="eyebrow">PromAI CRM</p>
+    <AppLayout
+      activeSection={activeSection}
+      onSectionChange={setActiveSection}
+    >
+      {activeSection === "dashboard" && <DashboardPage />}
 
-        <h1>Управление контрагентами и договорами</h1>
+      {activeSection === "counterparties" && (
+        <CounterpartiesPage />
+      )}
 
-        <p className="description">
-          Первый интерфейс PromAI успешно запущен.
-        </p>
-
-        <div className="status">
-          <span className="statusIndicator" />
-          Фронтенд работает
-        </div>
-      </section>
-    </main>
+      {activeSection === "contracts" && <ContractsPage />}
+    </AppLayout>
   );
 }
 

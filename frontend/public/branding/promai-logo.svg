@@ -1,0 +1,17 @@
+<svg width="680" height="140" viewBox="0 0 680 140" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>Логотип PromAI, вариант 3, без подписи</title>
+<desc>Минималистичная словомарка PromAI без иконки и без подписи, с выделенным блоком AI</desc>
+<defs>
+<linearGradient id="g1c" x1="0%" y1="0%" x2="0%" y2="100%">
+<stop offset="0%" stop-color="#3fd0e8"/>
+<stop offset="60%" stop-color="#22b8a0"/>
+<stop offset="100%" stop-color="#2fbf6a"/>
+</linearGradient>
+</defs>
+
+<text x="60" y="90" font-family="Arial, Helvetica, sans-serif" font-size="70" font-weight="800" fill="#3a4443" letter-spacing="1">Prom</text>
+
+<!-- AI badge -->
+<rect x="255" y="30" width="112" height="72" rx="14" fill="url(#g1c)"/>
+<text x="311" y="82" font-family="Arial, Helvetica, sans-serif" font-size="52" font-weight="800" fill="#ffffff" text-anchor="middle">AI</text>
+</svg>
