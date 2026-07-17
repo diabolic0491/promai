@@ -3,6 +3,7 @@ import { apiRequest } from "./client";
 import type {
   Contract,
   CreateContractPayload,
+  UpdateContractPayload,
 } from "../types/contract";
 
 export interface ContractsQuery {
@@ -45,4 +46,17 @@ export async function createContract(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function updateContract(
+  contractId: number,
+  payload: UpdateContractPayload,
+): Promise<Contract> {
+  return apiRequest<Contract>(
+    `/contracts/${contractId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
 }

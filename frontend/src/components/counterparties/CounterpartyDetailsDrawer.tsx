@@ -27,6 +27,7 @@ interface CounterpartyDetailsDrawerProps {
   counterparty: Counterparty | null;
   onClose: () => void;
   onChanged: (counterparty: Counterparty) => void;
+  onOpenContract?: (contract: Contract) => void;
 }
 
 interface FormState {
@@ -94,6 +95,7 @@ export function CounterpartyDetailsDrawer({
   counterparty,
   onClose,
   onChanged,
+  onOpenContract,
 }: CounterpartyDetailsDrawerProps) {
   const [form, setForm] =
     useState<FormState>(emptyForm);
@@ -603,6 +605,29 @@ export function CounterpartyDetailsDrawer({
                   <article
                     key={contract.id}
                     className="counterpartyContractCard"
+                    role="button"
+  
+                    tabIndex={0}
+  
+                    onClick={() => onOpenContract?.(contract)}
+  
+                    onKeyDown={(event) => {
+    
+                      if (
+      
+                        event.key === "Enter" ||
+      
+                        event.key === " "
+    
+                      ) {
+     
+                        event.preventDefault();
+      
+                        onOpenContract?.(contract);
+    
+                      }
+
+                    }}
                   >
                     <div className="counterpartyContractHeader">
                       <div>

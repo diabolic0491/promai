@@ -52,3 +52,20 @@ export interface CreateContractPayload {
   owner_role: ContractPartyRole;
   counterparty_role: ContractPartyRole;
 }
+
+export interface UpdateContractPayload {
+  number?: string;
+  title?: string;
+
+  contract_date?: string;
+  start_date?: string | null;
+  end_date?: string | null;
+
+  amount?: string | null;
+  currency?: string;
+
+  notes?: string | null;
+
+  owner_role?: ContractPartyRole;
+  counterparty_role?: ContractPartyRole;
+}

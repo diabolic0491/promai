@@ -7,9 +7,13 @@ import {
 import { getContracts } from "../api/contracts";
 import { getCounterparties } from
   "../api/counterparties";
+import { getOrganizationProfile } from
+  "../api/organizationProfile";
 
 import { CreateContractModal } from
   "../components/contracts/CreateContractModal";
+import { ContractDetailsDrawer } from
+  "../components/contracts/ContractDetailsDrawer";
 
 import { getContractRoleLabel } from
   "../constants/contractRoles";
@@ -17,6 +21,9 @@ import { getContractRoleLabel } from
 import type { Contract } from "../types/contract";
 import type { Counterparty } from
   "../types/counterparty";
+import type { OrganizationProfile } from
+  "../types/organizationProfile";
+
 
 export function ContractsPage() {
   const [contracts, setContracts] =
@@ -25,13 +32,20 @@ export function ContractsPage() {
   const [counterparties, setCounterparties] =
     useState<Counterparty[]>([]);
 
+  const [organization, setOrganization] =
+    useState<OrganizationProfile | null>(null);
+
+  const [selectedContract, setSelectedContract] =
+    useState<Contract | null>(null);
+
   const [isCreateModalOpen, setIsCreateModalOpen] =
     useState(false);
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(
-    null,
-  );
+  const [isLoading, setIsLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -41,18 +55,23 @@ export function ContractsPage() {
       const [
         loadedContracts,
         loadedCounterparties,
+        loadedOrganization,
       ] = await Promise.all([
         getContracts({
           limit: 100,
         }),
+
         getCounterparties({
           includeArchived: true,
           limit: 100,
         }),
+
+        getOrganizationProfile(),
       ]);
 
       setContracts(loadedContracts);
       setCounterparties(loadedCounterparties);
+      setOrganization(loadedOrganization);
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -77,6 +96,21 @@ export function ContractsPage() {
     );
   }
 
+  function formatContractAmount(
+    contract: Contract,
+  ): string {
+    if (!contract.amount) {
+      return "—";
+    }
+
+    return `${Number(
+      contract.amount,
+    ).toLocaleString("ru-RU", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} ${contract.currency}`;
+  }
+
   return (
     <section className="page">
       <div className="pageHeader">
@@ -96,7 +130,9 @@ export function ContractsPage() {
         <button
           type="button"
           className="primaryButton"
-          onClick={() => setIsCreateModalOpen(true)}
+          onClick={() =>
+            setIsCreateModalOpen(true)
+          }
         >
           + Новый договор
         </button>
@@ -116,6 +152,7 @@ export function ContractsPage() {
               <strong>
                 Не удалось получить договоры
               </strong>
+
               <span>{error}</span>
             </div>
 
@@ -136,7 +173,8 @@ export function ContractsPage() {
               <strong>Договоров пока нет</strong>
 
               <span>
-                Создайте первый договор с контрагентом.
+                Создайте первый договор с
+                контрагентом.
               </span>
             </div>
           )}
@@ -147,7 +185,9 @@ export function ContractsPage() {
             <>
               <div className="tableSummary">
                 Всего договоров:{" "}
-                <strong>{contracts.length}</strong>
+                <strong>
+                  {contracts.length}
+                </strong>
               </div>
 
               <div className="tableContainer">
@@ -171,14 +211,37 @@ export function ContractsPage() {
                         );
 
                       return (
-                        <tr key={contract.id}>
+                        <tr
+                          key={contract.id}
+                          className="clickableTableRow"
+                          tabIndex={0}
+                          onClick={() =>
+                            setSelectedContract(
+                              contract,
+                            )
+                          }
+                          onKeyDown={(event) => {
+                            if (
+                              event.key === "Enter" ||
+                              event.key === " "
+                            ) {
+                              event.preventDefault();
+
+                              setSelectedContract(
+                                contract,
+                              );
+                            }
+                          }}
+                        >
                           <td>
                             <div className="contractNameCell">
                               <strong>
                                 № {contract.number}
                               </strong>
 
-                              <span>{contract.title}</span>
+                              <span>
+                                {contract.title}
+                              </span>
                             </div>
                           </td>
 
@@ -192,7 +255,8 @@ export function ContractsPage() {
 
                               {counterparty && (
                                 <span>
-                                  УНП {counterparty.unp}
+                                  УНП{" "}
+                                  {counterparty.unp}
                                 </span>
                               )}
                             </div>
@@ -229,24 +293,15 @@ export function ContractsPage() {
                           </td>
 
                           <td>
-                            {contract.amount
-                              ? `${Number(
-                                  contract.amount,
-                                ).toLocaleString(
-                                  "ru-RU",
-                                  {
-                                    minimumFractionDigits:
-                                      2,
-                                    maximumFractionDigits:
-                                      2,
-                                  },
-                                )} ${contract.currency}`
-                              : "—"}
+                            {formatContractAmount(
+                              contract,
+                            )}
                           </td>
 
                           <td>
                             <span className="statusBadge statusBadgeDraft">
-                              {contract.status === "draft"
+                              {contract.status ===
+                              "draft"
                                 ? "Черновик"
                                 : contract.status}
                             </span>
@@ -263,9 +318,39 @@ export function ContractsPage() {
 
       <CreateContractModal
         isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
+        onClose={() =>
+          setIsCreateModalOpen(false)
+        }
         onCreated={() => {
           void loadData();
+        }}
+      />
+
+      <ContractDetailsDrawer
+        contract={selectedContract}
+        organization={organization}
+        counterparty={
+          selectedContract
+            ? getCounterparty(
+                selectedContract.counterparty_id,
+              ) ?? null
+            : null
+        }
+        onClose={() =>
+          setSelectedContract(null)
+        }
+        onChanged={(changedContract) => {
+          setSelectedContract(
+            changedContract,
+          );
+
+          setContracts((current) =>
+            current.map((item) =>
+              item.id === changedContract.id
+                ? changedContract
+                : item,
+            ),
+          );
         }}
       />
     </section>

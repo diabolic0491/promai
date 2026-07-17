@@ -1226,3 +1226,140 @@
     grid-template-columns: 1fr;
   }
 }
+
+.clickableTableRow {
+  cursor: pointer;
+}
+
+.clickableTableRow:focus {
+  outline: 2px solid var(--brand-middle);
+  outline-offset: -2px;
+}
+
+.contractDetailsDrawer {
+  width: min(720px, 100%);
+}
+
+.drawerHeaderSubtitle {
+  display: block;
+  max-width: 560px;
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contractDetailsForm {
+  gap: 26px;
+}
+
+.contractDetailsSection {
+  display: grid;
+  gap: 16px;
+}
+
+.contractDetailsParties {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+.contractDetailsParty {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #f8fafc;
+}
+
+.contractDetailsParty > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.contractDetailsParty small {
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.contractDetailsParty > div > strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contractDetailsParty > div > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.contractSystemInfo {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.contractSystemInfo div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: #f8fafc;
+}
+
+.contractSystemInfo span {
+  color: var(--text-secondary);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.contractSystemInfo strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.formSuccess {
+  padding: 12px 14px;
+  border: 1px solid #bbf7d0;
+  border-radius: 11px;
+  color: #087443;
+  background: #f0fdf4;
+  font-size: 13px;
+}
+
+.contractDrawerActions {
+  justify-content: flex-end;
+}
+
+.counterpartyContractCard[role="button"] {
+  cursor: pointer;
+}
+
+.counterpartyContractCard[role="button"]:focus {
+  outline: 2px solid var(--brand-middle);
+  outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+  .contractDetailsParties,
+  .contractSystemInfo {
+    grid-template-columns: 1fr;
+  }
+
+  .drawerHeaderSubtitle {
+    white-space: normal;
+  }
+}
