@@ -5,6 +5,9 @@ from app.core.config import get_settings
 from app.api.routes.counterparties import router as counterparties_router
 from app.api.routes.contracts import router as contracts_router
 from fastapi.middleware.cors import CORSMiddleware
+from app.api.routes.organization_profile import (
+    router as organization_profile_router,
+)
 
 settings = get_settings()
 
@@ -28,3 +31,4 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(counterparties_router)
 app.include_router(contracts_router)
+app.include_router(organization_profile_router)
