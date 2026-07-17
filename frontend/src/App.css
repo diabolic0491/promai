@@ -911,3 +911,198 @@
     grid-template-columns: 1fr;
   }
 }
+
+.contractModalCard {
+  width: min(900px, 100%);
+}
+
+.contractForm {
+  gap: 26px;
+}
+
+.contractPartiesSection,
+.contractFieldsSection {
+  display: grid;
+  gap: 16px;
+}
+
+.formSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.formSectionHeader div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.formSectionHeader span {
+  color: var(--brand-middle);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.formSectionHeader strong {
+  color: var(--text-primary);
+  font-size: 17px;
+}
+
+.contractPartiesGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+.contractPartyCard {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 17px;
+  background: #f8fafc;
+}
+
+.ownerPartyCard {
+  border-color: rgba(34, 184, 160, 0.35);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(63, 208, 232, 0.08),
+      rgba(47, 191, 106, 0.07)
+    );
+}
+
+.contractPartyHeading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.partyNumber {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border-radius: 10px;
+  color: #ffffff;
+  background: var(--brand-action-gradient);
+  font-weight: 800;
+}
+
+.contractPartyHeading div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.contractPartyHeading small {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.contractPartyHeading strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roleHint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.contractFormGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 17px;
+}
+
+.contractWideField {
+  grid-column: 1 / -1;
+}
+
+.formField select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 38px 10px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 11px;
+  outline: none;
+  color: var(--text-primary);
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.formField select:focus {
+  border-color: var(--brand-middle);
+  box-shadow: 0 0 0 3px rgba(34, 184, 160, 0.14);
+}
+
+.formField select:disabled {
+  cursor: not-allowed;
+  background: #f1f5f9;
+  opacity: 0.75;
+}
+
+.contractNameCell {
+  display: flex;
+  min-width: 190px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.contractNameCell strong {
+  color: var(--text-primary);
+}
+
+.contractNameCell span {
+  max-width: 280px;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contractRolesCell {
+  display: flex;
+  min-width: 180px;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.contractRolesCell span {
+  color: var(--text-secondary);
+}
+
+.contractRolesCell strong {
+  color: var(--text-primary);
+}
+
+.statusBadgeDraft {
+  color: #8a4b08;
+  background: #fef3c7;
+}
+
+@media (max-width: 760px) {
+  .contractPartiesGrid,
+  .contractFormGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .contractWideField {
+    grid-column: auto;
+  }
+}
