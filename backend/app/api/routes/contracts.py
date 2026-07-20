@@ -14,6 +14,7 @@ from app.models.contract import Contract
 from app.schemas.contract import (
     ContractCreate,
     ContractRead,
+    ContractStatusUpdate,
     ContractUpdate,
 )
 from app.services import contracts as service
@@ -131,16 +132,50 @@ def update_contract(
     except service.EmptyContractUpdateError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Не передано ни одного поля для изменения",
+            detail=(
+                "Не передано ни одного поля "
+                "для изменения"
+            ),
         )
     except service.InvalidContractDatesError:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_ENTITY
+            ),
             detail=(
                 "Дата окончания не может быть раньше "
                 "даты начала"
             ),
         )
+
+
+@router.patch(
+    "/{contract_id}/status",
+    response_model=ContractRead,
+)
+def update_contract_status(
+    contract_id: int,
+    payload: ContractStatusUpdate,
+    session: DatabaseSession,
+) -> Contract:
+    try:
+        return service.change_contract_status(
+            session=session,
+            contract_id=contract_id,
+            target_status=payload.status,
+        )
+    except service.ContractNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Договор не найден",
+        )
+    except (
+        service.InvalidContractStatusTransitionError
+    ) as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
 
 
 @router.post(

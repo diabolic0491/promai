@@ -8,6 +8,10 @@ from app.schemas.contract import (
     ContractUpdate,
 )
 
+from app.models.enums import ( 
+    ContractStatus,
+)
+
 
 class ContractNotFoundError(Exception):
     """Договор не найден."""
@@ -55,6 +59,9 @@ def create_contract(
         amount=payload.amount,
         currency=payload.currency,
         notes=payload.notes,
+        owner_role=payload.owner_role.value,
+        counterparty_role=payload.counterparty_role.value,
+        status=ContractStatus.DRAFT.value,
     )
 
     session.add(contract)
@@ -85,7 +92,7 @@ def list_contracts(
         )
     elif not include_archived:
         statement = statement.where(
-            Contract.status != "archived"
+            Contract.status != ContractStatus.ARCHIVED.value
         )
 
     statement = (
@@ -165,10 +172,10 @@ def archive_contract(
         contract_id=contract_id,
     )
 
-    if contract.status == "archived":
+    if contract.status == ContractStatus.ARCHIVED.value:
         raise ContractAlreadyArchivedError
 
-    contract.status = "archived"
+    contract.status = ContractStatus.ARCHIVED.value
 
     session.commit()
     session.refresh(contract)
@@ -185,10 +192,83 @@ def restore_contract(
         contract_id=contract_id,
     )
 
-    if contract.status != "archived":
+    if contract.status != ContractStatus.ARCHIVED.value:
         raise ContractAlreadyActiveError
 
-    contract.status = "draft"
+    contract.status = ContractStatus.DRAFT.value
+
+    session.commit()
+    session.refresh(contract)
+
+    return contract
+
+ALLOWED_CONTRACT_STATUS_TRANSITIONS: dict[
+    ContractStatus,
+    set[ContractStatus],
+] = {
+    ContractStatus.DRAFT: {
+        ContractStatus.PENDING_APPROVAL,
+    },
+    ContractStatus.PENDING_APPROVAL: {
+        ContractStatus.DRAFT,
+        ContractStatus.ACTIVE,
+    },
+    ContractStatus.ACTIVE: {
+        ContractStatus.COMPLETED,
+        ContractStatus.TERMINATED,
+    },
+    ContractStatus.COMPLETED: set(),
+    ContractStatus.TERMINATED: set(),
+    ContractStatus.ARCHIVED: set(),
+}
+
+
+class InvalidContractStatusTransitionError(Exception):
+    def __init__(
+        self,
+        current_status: ContractStatus,
+        target_status: ContractStatus,
+    ) -> None:
+        self.current_status = current_status
+        self.target_status = target_status
+
+        super().__init__(
+            "Недопустимый переход статуса договора: "
+            f"{current_status.value} → "
+            f"{target_status.value}"
+        )
+
+
+def change_contract_status(
+    session: Session,
+    contract_id: int,
+    target_status: ContractStatus,
+) -> Contract:
+    contract = get_contract_by_id(
+        session=session,
+        contract_id=contract_id,
+    )
+
+    current_status = ContractStatus(
+        contract.status
+    )
+
+    if current_status == target_status:
+        return contract
+
+    allowed_statuses = (
+        ALLOWED_CONTRACT_STATUS_TRANSITIONS[
+            current_status
+        ]
+    )
+
+    if target_status not in allowed_statuses:
+        raise InvalidContractStatusTransitionError(
+            current_status=current_status,
+            target_status=target_status,
+        )
+
+    contract.status = target_status.value
 
     session.commit()
     session.refresh(contract)

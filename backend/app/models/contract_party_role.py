@@ -1,6 +1,15 @@
 from enum import StrEnum
 
 
+class ContractStatus(StrEnum):
+    DRAFT = "draft"
+    PENDING_APPROVAL = "pending_approval"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    TERMINATED = "terminated"
+    ARCHIVED = "archived"
+
+
 class ContractPartyRole(StrEnum):
     SUPPLIER = "supplier"
     BUYER = "buyer"

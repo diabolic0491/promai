@@ -2,6 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+
 from sqlalchemy import (
     Date,
     DateTime,
@@ -20,6 +21,7 @@ from sqlalchemy.orm import (
 from app.db.base import Base
 from app.models.contract_party_role import (
     ContractPartyRole,
+    ContractStatus
 )
 
 
@@ -85,8 +87,8 @@ class Contract(Base):
     status: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
-        default="draft",
-        server_default="draft",
+        default=ContractStatus.DRAFT.value,
+        server_default=ContractStatus.DRAFT.value,
     )
 
     notes: Mapped[str | None] = mapped_column(

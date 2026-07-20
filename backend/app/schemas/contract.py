@@ -11,7 +11,12 @@ from pydantic import (
 
 from app.models.contract_party_role import (
     ContractPartyRole,
+    ContractStatus,
 )
+
+
+class ContractStatusUpdate(BaseModel):
+    status: ContractStatus
 
 
 class ContractCreate(BaseModel):
@@ -229,7 +234,7 @@ class ContractRead(BaseModel):
 
     amount: Decimal | None
     currency: str
-    status: str
+    status: ContractStatus
     notes: str | None
 
     owner_role: ContractPartyRole
