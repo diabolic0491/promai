@@ -5,7 +5,11 @@ import {
 } from "react";
 
 import { ApiError } from "../../api/client";
-import { updateContract } from "../../api/contracts";
+import {
+  archiveContract,
+  restoreContract,
+  updateContract,
+} from "../../api/contracts";
 
 import { contractRoleOptions } from
   "../../constants/contractRoles";
@@ -29,6 +33,7 @@ interface ContractDetailsDrawerProps {
   onChanged: (contract: Contract) => void;
 }
 
+
 interface FormState {
   number: string;
   title: string;
@@ -44,6 +49,7 @@ interface FormState {
   ownerRole: ContractPartyRole;
   counterpartyRole: ContractPartyRole;
 }
+
 
 function createFormState(
   contract: Contract,
@@ -61,9 +67,11 @@ function createFormState(
     notes: contract.notes ?? "",
 
     ownerRole: contract.owner_role,
-    counterpartyRole: contract.counterparty_role,
+    counterpartyRole:
+      contract.counterparty_role,
   };
 }
+
 
 function validateForm(
   formState: FormState,
@@ -105,23 +113,31 @@ function validateForm(
     formState.currency.trim().toUpperCase();
 
   if (!/^[A-Z]{3}$/.test(currency)) {
-    return "Код валюты должен состоять из трёх букв";
+    return (
+      "Код валюты должен состоять " +
+      "из трёх букв"
+    );
   }
 
   return null;
 }
 
-function formatStatus(status: string): string {
+
+function formatStatus(
+  status: string,
+): string {
   const statuses: Record<string, string> = {
     draft: "Черновик",
-    review: "На согласовании",
+    pending_approval: "На согласовании",
     active: "Действующий",
     completed: "Завершён",
     terminated: "Расторгнут",
+    archived: "В архиве",
   };
 
   return statuses[status] ?? status;
 }
+
 
 export function ContractDetailsDrawer({
   contract,
@@ -136,11 +152,23 @@ export function ContractDetailsDrawer({
   const [isSaving, setIsSaving] =
     useState(false);
 
+  const [
+    isChangingArchiveStatus,
+    setIsChangingArchiveStatus,
+  ] = useState(false);
+
   const [error, setError] =
     useState<string | null>(null);
 
   const [successMessage, setSuccessMessage] =
     useState<string | null>(null);
+
+  const isArchived =
+    contract?.status === "archived";
+
+  const isBusy =
+    isSaving || isChangingArchiveStatus;
+
 
   useEffect(() => {
     if (!contract) {
@@ -153,6 +181,7 @@ export function ContractDetailsDrawer({
     setSuccessMessage(null);
   }, [contract]);
 
+
   useEffect(() => {
     if (!contract) {
       return;
@@ -163,7 +192,7 @@ export function ContractDetailsDrawer({
     ) {
       if (
         event.key === "Escape" &&
-        !isSaving
+        !isBusy
       ) {
         onClose();
       }
@@ -184,7 +213,8 @@ export function ContractDetailsDrawer({
 
       document.body.style.overflow = "";
     };
-  }, [contract, isSaving, onClose]);
+  }, [contract, isBusy, onClose]);
+
 
   function updateField<
     K extends keyof FormState,
@@ -207,6 +237,7 @@ export function ContractDetailsDrawer({
     setSuccessMessage(null);
   }
 
+
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>,
   ) {
@@ -218,6 +249,14 @@ export function ContractDetailsDrawer({
     if (!currentForm || !currentContract) {
       setError(
         "Данные договора ещё не загружены",
+      );
+      return;
+    }
+
+    if (currentContract.status === "archived") {
+      setError(
+        "Архивный договор сначала " +
+        "нужно восстановить",
       );
       return;
     }
@@ -290,6 +329,66 @@ export function ContractDetailsDrawer({
     }
   }
 
+
+  async function handleArchiveStatusChange() {
+    const currentContract = contract;
+
+    if (!currentContract) {
+      setError(
+        "Данные договора ещё не загружены",
+      );
+      return;
+    }
+
+    const isArchiving =
+      currentContract.status !== "archived";
+
+    const confirmed = window.confirm(
+      isArchiving
+        ? "Переместить договор в архив?"
+        : "Восстановить договор из архива?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsChangingArchiveStatus(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      const changed = isArchiving
+        ? await archiveContract(
+            currentContract.id,
+          )
+        : await restoreContract(
+            currentContract.id,
+          );
+
+      setForm(createFormState(changed));
+      onChanged(changed);
+
+      setSuccessMessage(
+        isArchiving
+          ? "Договор перемещён в архив"
+          : "Договор восстановлен",
+      );
+    } catch (requestError) {
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : (
+              "Не удалось изменить архивный " +
+              "статус договора"
+            ),
+      );
+    } finally {
+      setIsChangingArchiveStatus(false);
+    }
+  }
+
+
   if (!contract || !form) {
     return null;
   }
@@ -304,6 +403,10 @@ export function ContractDetailsDrawer({
     counterparty?.name ||
     `Контрагент #${contract.counterparty_id}`;
 
+  const fieldsDisabled =
+    isBusy || isArchived;
+
+
   return (
     <div
       className="drawerBackdrop"
@@ -311,14 +414,17 @@ export function ContractDetailsDrawer({
       onMouseDown={(event) => {
         if (
           event.target === event.currentTarget &&
-          !isSaving
+          !isBusy
         ) {
           onClose();
         }
       }}
     >
       <aside
-        className="detailsDrawer contractDetailsDrawer"
+        className={
+          "detailsDrawer " +
+          "contractDetailsDrawer"
+        }
         role="dialog"
         aria-modal="true"
         aria-labelledby="contract-details-title"
@@ -342,7 +448,7 @@ export function ContractDetailsDrawer({
             type="button"
             className="modalCloseButton"
             onClick={onClose}
-            disabled={isSaving}
+            disabled={isBusy}
             aria-label="Закрыть"
           >
             ×
@@ -350,13 +456,17 @@ export function ContractDetailsDrawer({
         </header>
 
         <form
-          className="drawerForm contractDetailsForm"
+          className={
+            "drawerForm " +
+            "contractDetailsForm"
+          }
           onSubmit={handleSubmit}
         >
           <section className="contractDetailsSection">
             <div className="formSectionHeader">
               <div>
                 <span>Стороны договора</span>
+
                 <strong>
                   Участники и их роли
                 </strong>
@@ -364,7 +474,12 @@ export function ContractDetailsDrawer({
             </div>
 
             <div className="contractDetailsParties">
-              <article className="contractDetailsParty ownerPartyCard">
+              <article
+                className={
+                  "contractDetailsParty " +
+                  "ownerPartyCard"
+                }
+              >
                 <div>
                   <small>
                     Наша организация
@@ -395,7 +510,7 @@ export function ContractDetailsDrawer({
                           .value as ContractPartyRole,
                       )
                     }
-                    disabled={isSaving}
+                    disabled={fieldsDisabled}
                   >
                     {contractRoleOptions.map(
                       (role) => (
@@ -413,7 +528,9 @@ export function ContractDetailsDrawer({
 
               <article className="contractDetailsParty">
                 <div>
-                  <small>Контрагент</small>
+                  <small>
+                    Контрагент
+                  </small>
 
                   <strong>
                     {counterpartyName}
@@ -442,7 +559,7 @@ export function ContractDetailsDrawer({
                           .value as ContractPartyRole,
                       )
                     }
-                    disabled={isSaving}
+                    disabled={fieldsDisabled}
                   >
                     {contractRoleOptions.map(
                       (role) => (
@@ -464,6 +581,7 @@ export function ContractDetailsDrawer({
             <div className="formSectionHeader">
               <div>
                 <span>Реквизиты</span>
+
                 <strong>
                   Основные сведения
                 </strong>
@@ -487,7 +605,7 @@ export function ContractDetailsDrawer({
                     )
                   }
                   maxLength={100}
-                  disabled={isSaving}
+                  disabled={fieldsDisabled}
                 />
               </label>
 
@@ -506,11 +624,16 @@ export function ContractDetailsDrawer({
                       event.target.value,
                     )
                   }
-                  disabled={isSaving}
+                  disabled={fieldsDisabled}
                 />
               </label>
 
-              <label className="formField contractWideField">
+              <label
+                className={
+                  "formField " +
+                  "contractWideField"
+                }
+              >
                 <span>
                   Название или предмет договора{" "}
                   <strong>*</strong>
@@ -526,7 +649,7 @@ export function ContractDetailsDrawer({
                     )
                   }
                   maxLength={500}
-                  disabled={isSaving}
+                  disabled={fieldsDisabled}
                 />
               </label>
 
@@ -542,7 +665,7 @@ export function ContractDetailsDrawer({
                       event.target.value,
                     )
                   }
-                  disabled={isSaving}
+                  disabled={fieldsDisabled}
                 />
               </label>
 
@@ -558,7 +681,7 @@ export function ContractDetailsDrawer({
                       event.target.value,
                     )
                   }
-                  disabled={isSaving}
+                  disabled={fieldsDisabled}
                 />
               </label>
 
@@ -577,7 +700,7 @@ export function ContractDetailsDrawer({
                     )
                   }
                   placeholder="0.00"
-                  disabled={isSaving}
+                  disabled={fieldsDisabled}
                 />
               </label>
 
@@ -592,7 +715,7 @@ export function ContractDetailsDrawer({
                       event.target.value,
                     )
                   }
-                  disabled={isSaving}
+                  disabled={fieldsDisabled}
                 >
                   <option value="BYN">
                     BYN
@@ -616,7 +739,12 @@ export function ContractDetailsDrawer({
                 </select>
               </label>
 
-              <label className="formField contractWideField">
+              <label
+                className={
+                  "formField " +
+                  "contractWideField"
+                }
+              >
                 <span>Примечание</span>
 
                 <textarea
@@ -628,7 +756,7 @@ export function ContractDetailsDrawer({
                     )
                   }
                   rows={4}
-                  disabled={isSaving}
+                  disabled={fieldsDisabled}
                 />
               </label>
             </div>
@@ -639,9 +767,7 @@ export function ContractDetailsDrawer({
               <span>Статус</span>
 
               <strong>
-                {formatStatus(
-                  contract.status,
-                )}
+                {formatStatus(contract.status)}
               </strong>
             </div>
 
@@ -651,9 +777,7 @@ export function ContractDetailsDrawer({
               <strong>
                 {new Date(
                   contract.created_at,
-                ).toLocaleDateString(
-                  "ru-RU",
-                )}
+                ).toLocaleDateString("ru-RU")}
               </strong>
             </div>
 
@@ -663,9 +787,7 @@ export function ContractDetailsDrawer({
               <strong>
                 {new Date(
                   contract.updated_at,
-                ).toLocaleDateString(
-                  "ru-RU",
-                )}
+                ).toLocaleDateString("ru-RU")}
               </strong>
             </div>
           </div>
@@ -688,12 +810,36 @@ export function ContractDetailsDrawer({
             </div>
           )}
 
-          <div className="drawerActions contractDrawerActions">
+          <div
+            className={
+              "drawerActions " +
+              "contractDrawerActions"
+            }
+          >
+            <button
+              type="button"
+              className={
+                isArchived
+                  ? "secondaryButton"
+                  : "dangerButton"
+              }
+              onClick={() =>
+                void handleArchiveStatusChange()
+              }
+              disabled={isBusy}
+            >
+              {isChangingArchiveStatus
+                ? "Выполняем…"
+                : isArchived
+                  ? "Восстановить"
+                  : "В архив"}
+            </button>
+
             <button
               type="button"
               className="secondaryButton"
               onClick={onClose}
-              disabled={isSaving}
+              disabled={isBusy}
             >
               Закрыть
             </button>
@@ -701,11 +847,13 @@ export function ContractDetailsDrawer({
             <button
               type="submit"
               className="primaryButton"
-              disabled={isSaving}
+              disabled={fieldsDisabled}
             >
               {isSaving
                 ? "Сохраняем…"
-                : "Сохранить изменения"}
+                : isArchived
+                  ? "Договор в архиве"
+                  : "Сохранить изменения"}
             </button>
           </div>
         </form>
