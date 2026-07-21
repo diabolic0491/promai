@@ -14,9 +14,35 @@ from app.models.contract_party_role import (
     ContractStatus,
 )
 
+from app.models.contract_event import (
+    ContractEventType,
+)
+
 
 class ContractStatusUpdate(BaseModel):
     status: ContractStatus
+
+class ContractStatusHistoryRead(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
+
+    id: int
+    contract_id: int
+    from_status: ContractStatus | None
+    to_status: ContractStatus
+    changed_at: datetime
+
+class ContractEventRead(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
+
+    id: int
+    contract_id: int
+    event_type: ContractEventType
+    event_data: dict[str, object] | None
+    created_at: datetime
 
 
 class ContractCreate(BaseModel):
@@ -235,6 +261,8 @@ class ContractRead(BaseModel):
     amount: Decimal | None
     currency: str
     status: ContractStatus
+    archived_at: datetime | None
+    is_archived: bool
     notes: str | None
 
     owner_role: ContractPartyRole

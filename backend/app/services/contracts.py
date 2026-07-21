@@ -1,15 +1,23 @@
+from datetime import UTC, datetime
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.contract import Contract
+from app.models.contract_status_history import (
+    ContractStatusHistory,
+)
 from app.models.counterparty import Counterparty
+from app.models.enums import ContractStatus
 from app.schemas.contract import (
     ContractCreate,
     ContractUpdate,
 )
 
-from app.models.enums import ( 
-    ContractStatus,
+from app.models.contract_event import (
+    ContractEvent,
+    ContractEventType,
 )
 
 
@@ -20,22 +28,42 @@ class ContractNotFoundError(Exception):
 class ContractCounterpartyNotFoundError(Exception):
     """Контрагент для договора не найден."""
 
+class ArchivedContractCounterpartyError(Exception):
+    """Нельзя создать договор с архивным контрагентом."""
+
 
 class EmptyContractUpdateError(Exception):
     """Не передано ни одного поля для изменения."""
 
 
-class ContractAlreadyArchivedError(Exception):
-    """Договор уже находится в архиве."""
+class ContractNotArchivedError(Exception):
+    """Договор не находится в архиве."""
 
 
-class ContractAlreadyActiveError(Exception):
-    """Договор уже активен."""
+class ArchivedContractModificationError(Exception):
+    """Архивный договор нельзя изменять."""
+
 
 
 class InvalidContractDatesError(Exception):
     """Некорректный период действия договора."""
 
+
+def add_contract_event(
+    session: Session,
+    contract_id: int,
+    event_type: ContractEventType,
+    event_data: dict[str, Any] | None = None,
+) -> ContractEvent:
+    event = ContractEvent(
+        contract_id=contract_id,
+        event_type=event_type.value,
+        event_data=event_data,
+    )
+
+    session.add(event)
+
+    return event
 
 def create_contract(
     session: Session,
@@ -48,6 +76,9 @@ def create_contract(
 
     if counterparty is None:
         raise ContractCounterpartyNotFoundError
+
+    if counterparty.status == "archived":
+        raise ArchivedContractCounterpartyError
 
     contract = Contract(
         counterparty_id=payload.counterparty_id,
@@ -65,6 +96,25 @@ def create_contract(
     )
 
     session.add(contract)
+    session.flush()
+
+    history_entry = ContractStatusHistory(
+        contract_id=contract.id,
+        from_status=None,
+        to_status=ContractStatus.DRAFT.value,
+    )
+
+    session.add(history_entry)
+    add_contract_event(
+        session=session,
+        contract_id=contract.id,
+        event_type=ContractEventType.CREATED,
+        event_data={
+            "initial_status": (
+                ContractStatus.DRAFT.value
+            ),
+        },
+    )
     session.commit()
     session.refresh(contract)
 
@@ -81,18 +131,14 @@ def list_contracts(
 ) -> list[Contract]:
     statement = select(Contract)
 
-    if counterparty_id is not None:
-        statement = statement.where(
-            Contract.counterparty_id == counterparty_id
-        )
-
     if status is not None:
         statement = statement.where(
             Contract.status == status
         )
-    elif not include_archived:
+
+    if not include_archived:
         statement = statement.where(
-            Contract.status != ContractStatus.ARCHIVED.value
+            Contract.archived_at.is_(None)
         )
 
     statement = (
@@ -119,6 +165,59 @@ def get_contract_by_id(
 
     return contract
 
+def list_contract_status_history(
+    session: Session,
+    contract_id: int,
+) -> list[ContractStatusHistory]:
+    get_contract_by_id(
+        session=session,
+        contract_id=contract_id,
+    )
+
+    statement = (
+        select(ContractStatusHistory)
+        .where(
+            ContractStatusHistory.contract_id
+            == contract_id
+        )
+        .order_by(
+            ContractStatusHistory.changed_at.desc(),
+            ContractStatusHistory.id.desc(),
+        )
+    )
+    return list(
+        session.scalars(statement).all()
+    )
+
+def list_contract_events(
+    session: Session,
+    contract_id: int,
+) -> list[ContractEvent]:
+    get_contract_by_id(
+        session=session,
+        contract_id=contract_id,
+    )
+
+    statement = (
+        select(ContractEvent)
+        .where(
+            ContractEvent.contract_id
+            == contract_id
+        )
+        .order_by(
+            ContractEvent.created_at.desc(),
+            ContractEvent.id.desc(),
+        )
+    )
+
+    return list(
+        session.scalars(statement).all()
+    )
+
+    return list(
+        session.scalars(statement).all()
+    )
+
 
 def update_contract(
     session: Session,
@@ -129,6 +228,9 @@ def update_contract(
         session=session,
         contract_id=contract_id,
     )
+
+    if contract.archived_at is not None:
+        raise ArchivedContractModificationError
 
     update_data = payload.model_dump(
         exclude_unset=True,
@@ -147,6 +249,12 @@ def update_contract(
         contract.end_date,
     )
 
+    changed_fields = [
+        field_name
+        for field_name, value in update_data.items()
+        if getattr(contract, field_name) != value
+    ]
+
     if (
         prospective_start_date is not None
         and prospective_end_date is not None
@@ -156,6 +264,18 @@ def update_contract(
 
     for field_name, value in update_data.items():
         setattr(contract, field_name, value)
+    
+    if changed_fields:
+        add_contract_event(
+        session=session,
+        contract_id=contract.id,
+        event_type=ContractEventType.UPDATED,
+        event_data={
+            "changed_fields": sorted(
+                 changed_fields
+         ),
+         },
+        )
 
     session.commit()
     session.refresh(contract)
@@ -172,10 +292,23 @@ def archive_contract(
         contract_id=contract_id,
     )
 
-    if contract.status == ContractStatus.ARCHIVED.value:
+    if contract.archived_at is not None:
         raise ContractAlreadyArchivedError
 
-    contract.status = ContractStatus.ARCHIVED.value
+    archived_at = datetime.now(UTC)
+    contract.archived_at = archived_at
+
+    add_contract_event(
+        session=session,
+        contract_id=contract.id,
+        event_type=ContractEventType.ARCHIVED,
+        event_data={
+            "archived_at": (
+                archived_at.isoformat()
+            ),
+            "status": contract.status,
+        },
+    )
 
     session.commit()
     session.refresh(contract)
@@ -192,10 +325,23 @@ def restore_contract(
         contract_id=contract_id,
     )
 
-    if contract.status != ContractStatus.ARCHIVED.value:
-        raise ContractAlreadyActiveError
+    if contract.archived_at is None:
+        raise ContractNotArchivedError
+    
+    previous_archived_at = contract.archived_at
+    contract.archived_at = None
 
-    contract.status = ContractStatus.DRAFT.value
+    add_contract_event(
+        session=session,
+        contract_id=contract.id,
+        event_type=ContractEventType.RESTORED,
+        event_data={
+            "previous_archived_at": (
+                previous_archived_at.isoformat()
+            ),
+            "status": contract.status,
+        },
+    )
 
     session.commit()
     session.refresh(contract)
@@ -219,7 +365,7 @@ ALLOWED_CONTRACT_STATUS_TRANSITIONS: dict[
     },
     ContractStatus.COMPLETED: set(),
     ContractStatus.TERMINATED: set(),
-    ContractStatus.ARCHIVED: set(),
+        
 }
 
 
@@ -248,6 +394,8 @@ def change_contract_status(
         session=session,
         contract_id=contract_id,
     )
+    if contract.archived_at is not None:
+        raise ArchivedContractModificationError
 
     current_status = ContractStatus(
         contract.status
@@ -268,8 +416,28 @@ def change_contract_status(
             target_status=target_status,
         )
 
+    previous_status = current_status
+
     contract.status = target_status.value
 
+    history_entry = ContractStatusHistory(
+        contract_id=contract.id,
+        from_status=previous_status.value,
+        to_status=target_status.value,
+    )
+
+    session.add(history_entry)
+    add_contract_event(
+        session=session,
+        contract_id=contract.id,
+        event_type=(
+            ContractEventType.STATUS_CHANGED
+        ),
+        event_data={
+            "from_status": previous_status.value,
+            "to_status": target_status.value,
+        },
+    )
     session.commit()
     session.refresh(contract)
 

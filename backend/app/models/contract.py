@@ -2,7 +2,6 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-
 from sqlalchemy import (
     Date,
     DateTime,
@@ -21,12 +20,18 @@ from sqlalchemy.orm import (
 from app.db.base import Base
 from app.models.contract_party_role import (
     ContractPartyRole,
-    ContractStatus
+    ContractStatus,
 )
 
 
 if TYPE_CHECKING:
+    from app.models.contract_status_history import (
+        ContractStatusHistory,
+    )
     from app.models.counterparty import Counterparty
+    from app.models.contract_event import (
+        ContractEvent,
+    )
 
 
 class Contract(Base):
@@ -91,6 +96,12 @@ class Contract(Base):
         server_default=ContractStatus.DRAFT.value,
     )
 
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+
     notes: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
@@ -126,3 +137,31 @@ class Contract(Base):
     counterparty: Mapped["Counterparty"] = relationship(
         back_populates="contracts",
     )
+
+    status_history: Mapped[
+        list["ContractStatusHistory"]
+    ] = relationship(
+        back_populates="contract",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by=(
+            "ContractStatusHistory.changed_at.desc()"
+        ),
+    )
+
+    events: Mapped[
+        list["ContractEvent"]
+    ] = relationship(
+        back_populates="contract",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by=(
+            "ContractEvent.created_at.desc()"
+        ),
+    )
+
+
+
+    @property
+    def is_archived(self) -> bool:
+        return self.archived_at is not None

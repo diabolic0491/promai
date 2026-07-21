@@ -7,7 +7,6 @@ class ContractStatus(StrEnum):
     ACTIVE = "active"
     COMPLETED = "completed"
     TERMINATED = "terminated"
-    ARCHIVED = "archived"
 
 
 class ContractPartyRole(StrEnum):
