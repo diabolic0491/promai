@@ -15,6 +15,15 @@ from app.models.organization_profile import (
     OrganizationProfile,
 )
 
+from app.models.document_template import (
+    DocumentTemplate,
+    DocumentTemplateType,
+)
+from app.models.technical_specification import (
+    TechnicalSpecification,
+    TechnicalSpecificationStatus,
+)
+
 
 __all__ = [
     "Contract",
@@ -25,4 +34,8 @@ __all__ = [
     "ContractStatusHistory",
     "Counterparty",
     "OrganizationProfile",
+    "DocumentTemplate",
+    "DocumentTemplateType",
+    "TechnicalSpecification",
+    "TechnicalSpecificationStatus",
 ]
