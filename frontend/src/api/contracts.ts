@@ -8,6 +8,7 @@ import type {
 
 export interface ContractsQuery {
   counterpartyId?: number;
+  includeArchived?: boolean;
   limit?: number;
   offset?: number;
 }
@@ -22,6 +23,10 @@ export async function getContracts(
       "counterparty_id",
       String(query.counterpartyId),
     );
+  }
+
+  if (query.includeArchived) {
+    parameters.set("include_archived", "true");
   }
 
   if (query.limit !== undefined) {
@@ -57,6 +62,28 @@ export async function updateContract(
     {
       method: "PATCH",
       body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function archiveContract(
+  contractId: number,
+): Promise<Contract> {
+  return apiRequest<Contract>(
+    `/contracts/${contractId}/archive`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function restoreContract(
+  contractId: number,
+): Promise<Contract> {
+  return apiRequest<Contract>(
+    `/contracts/${contractId}/restore`,
+    {
+      method: "POST",
     },
   );
 }

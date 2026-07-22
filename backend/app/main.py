@@ -1,13 +1,21 @@
 from fastapi import FastAPI
-
-from app.api.routes.health import router as health_router
-from app.core.config import get_settings
-from app.api.routes.counterparties import router as counterparties_router
-from app.api.routes.contracts import router as contracts_router
 from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.routes.contracts import router as contracts_router
+from app.api.routes.counterparties import router as counterparties_router
+from app.api.routes.document_templates import (
+    router as document_templates_router,
+)
+from app.api.routes.health import router as health_router
 from app.api.routes.organization_profile import (
     router as organization_profile_router,
 )
+from app.core.config import get_settings
+
+from app.api.routes.technical_specifications import (
+    router as technical_specifications_router,
+)
+
 
 settings = get_settings()
 
@@ -32,3 +40,5 @@ app.include_router(health_router)
 app.include_router(counterparties_router)
 app.include_router(contracts_router)
 app.include_router(organization_profile_router)
+app.include_router(document_templates_router)
+app.include_router(technical_specifications_router)

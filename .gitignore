@@ -14,6 +14,8 @@ venv/
 .mypy_cache/
 .coverage
 htmlcov/
+storage/*
+!storage/.gitkeep
 
 # Node.js
 node_modules/
@@ -62,4 +64,6 @@ backups/
 *.key
 *.crt
 *.pfx
-*.p12
+*.p12/storage/
+*.tar.gz
+*.diff

@@ -62,6 +62,11 @@ class OrganizationProfile(Base):
         nullable=True,
     )
 
+    director_position: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
     bank_name: Mapped[str | None] = mapped_column(
         String(500),
         nullable=True,

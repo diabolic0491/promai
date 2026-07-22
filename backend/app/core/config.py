@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     database_url: str
+    storage_root: str = "/app/storage"
 
     model_config = SettingsConfigDict(
         env_file=".env",

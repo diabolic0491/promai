@@ -58,6 +58,7 @@ export function ContractsPage() {
         loadedOrganization,
       ] = await Promise.all([
         getContracts({
+          includeArchived: true,
           limit: 100,
         }),
 
@@ -299,11 +300,26 @@ export function ContractsPage() {
                           </td>
 
                           <td>
-                            <span className="statusBadge statusBadgeDraft">
-                              {contract.status ===
-                              "draft"
-                                ? "Черновик"
-                                : contract.status}
+                            <span
+                              className={
+                                contract.status === "archived"
+                                  ? "statusBadge statusBadgeArchived"
+                                  : "statusBadge statusBadgeDraft"
+                              }
+                            >
+                              {contract.status === "draft"
+                               ? "Черновик"
+                               : contract.status === "pending_approval"
+                                  ? "На согласовании"
+                                  : contract.status === "active"
+                                    ? "Действующий"
+                                    : contract.status === "completed"
+                                      ? "Завершён"
+                                      : contract.status === "terminated"
+                                       ? "Расторгнут"
+                                       : contract.status === "archived"
+                                          ? "В архиве"
+                                           : contract.status}
                             </span>
                           </td>
                         </tr>

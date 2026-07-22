@@ -10,6 +10,14 @@ export type ContractPartyRole =
   | "borrower"
   | "other";
 
+export type ContractStatus =
+  | "draft"
+  | "pending_approval"
+  | "active"
+  | "completed"
+  | "terminated"
+  | "archived";
+
 export interface Contract {
   id: number;
   counterparty_id: number;
@@ -24,7 +32,7 @@ export interface Contract {
   amount: string | null;
   currency: string;
 
-  status: string;
+  status: ContractStatus;
   notes: string | null;
 
   owner_role: ContractPartyRole;

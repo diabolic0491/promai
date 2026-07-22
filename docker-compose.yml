@@ -39,12 +39,14 @@ services:
       APP_VERSION: ${APP_VERSION}
       APP_ENVIRONMENT: ${APP_ENVIRONMENT}
       DEBUG: ${DEBUG}
+      STORAGE_ROOT: ${STORAGE_ROOT:-/app/storage}
 
     ports:
       - "${BACKEND_PORT}:8000"
 
     volumes:
       - ./backend:/app
+      - ./storage:/app/storage
 
     depends_on:
       postgres:

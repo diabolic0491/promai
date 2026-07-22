@@ -43,6 +43,11 @@ class OrganizationProfileUpdate(BaseModel):
         max_length=255,
     )
 
+    director_position: str | None = Field(
+        default=None,
+        max_length=255,
+    )
+
     bank_name: str | None = Field(
         default=None,
         max_length=500,
@@ -66,6 +71,7 @@ class OrganizationProfileUpdate(BaseModel):
         "email",
         "phone",
         "director_name",
+        "director_position",
         "bank_name",
         "bank_account",
         "bank_code",
@@ -93,6 +99,7 @@ class OrganizationProfileRead(BaseModel):
     email: str | None
     phone: str | None
     director_name: str | None
+    director_position: str | None
     bank_name: str | None
     bank_account: str | None
     bank_code: str | None
