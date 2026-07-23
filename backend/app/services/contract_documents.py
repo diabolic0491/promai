@@ -3,9 +3,12 @@ from datetime import date
 from dataclasses import dataclass
 from decimal import Decimal
 from hashlib import sha256
+from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
+from docx import Document
+from fastapi import UploadFile
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -13,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models.contract import Contract
 from app.models.contract_document_version import (
+    ContractDocumentSource,
     ContractDocumentVersion,
 )
 from app.models.contract_event import (
@@ -43,6 +47,7 @@ DOCX_MEDIA_TYPE = (
     "application/vnd.openxmlformats-officedocument."
     "wordprocessingml.document"
 )
+MAX_CONTRACT_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -106,6 +111,18 @@ class GeneratedContractFileNotFoundError(Exception):
 
 class ContractDocumentVersionNotFoundError(Exception):
     """Версия документа договора не найдена."""
+
+
+class InvalidUploadedContractDocumentError(Exception):
+    """Загруженный файл не является корректным DOCX."""
+
+
+class UploadedContractDocumentTooLargeError(Exception):
+    """Размер загруженного договора превышает лимит."""
+
+
+class ArchivedContractUploadError(Exception):
+    """В архивный договор нельзя загрузить документ."""
 
 
 def get_contract_by_id(
@@ -461,6 +478,30 @@ def resolve_generated_file_path(
     return candidate
 
 
+def get_next_contract_document_version_number(
+    session: Session,
+    contract_id: int,
+) -> int:
+    return int(
+        session.scalar(
+            select(
+                func.coalesce(
+                    func.max(
+                        ContractDocumentVersion
+                        .version_number
+                    ),
+                    0,
+                )
+                + 1
+            ).where(
+                ContractDocumentVersion.contract_id
+                == contract_id
+            )
+        )
+        or 1
+    )
+
+
 def generate_contract_docx(
     session: Session,
     contract_id: int,
@@ -522,23 +563,11 @@ def generate_contract_docx(
         raise InvalidContractDocxTemplateError from error
 
     try:
-        version_number = int(
-            session.scalar(
-                select(
-                    func.coalesce(
-                        func.max(
-                            ContractDocumentVersion
-                            .version_number
-                        ),
-                        0,
-                    )
-                    + 1
-                ).where(
-                    ContractDocumentVersion.contract_id
-                    == contract.id
-                )
+        version_number = (
+            get_next_contract_document_version_number(
+                session=session,
+                contract_id=contract.id,
             )
-            or 1
         )
         generated_file_name = build_generated_file_name(
             contract
@@ -549,6 +578,7 @@ def generate_contract_docx(
         document_version = ContractDocumentVersion(
             contract_id=contract.id,
             version_number=version_number,
+            source=ContractDocumentSource.GENERATED.value,
             template_id=template.id,
             template_name=template.name,
             template_version=template.version,
@@ -606,6 +636,119 @@ def generate_contract_docx(
         path=output_path,
         file_name=generated_file_name,
     )
+
+
+def upload_contract_document_version(
+    session: Session,
+    contract_id: int,
+    *,
+    actor_user_id: int,
+    upload: UploadFile,
+) -> ContractDocumentVersion:
+    contract = get_contract_for_generation(
+        session=session,
+        contract_id=contract_id,
+    )
+
+    if contract.archived_at is not None:
+        raise ArchivedContractUploadError
+
+    original_file_name = Path(
+        (upload.filename or "document.docx").replace(
+            "\\",
+            "/",
+        )
+    ).name
+
+    if (
+        len(original_file_name) > 255
+        or Path(original_file_name).suffix.lower()
+        != ".docx"
+    ):
+        raise InvalidUploadedContractDocumentError
+
+    content = upload.file.read(
+        MAX_CONTRACT_DOCUMENT_SIZE_BYTES + 1
+    )
+
+    if (
+        len(content)
+        > MAX_CONTRACT_DOCUMENT_SIZE_BYTES
+    ):
+        raise UploadedContractDocumentTooLargeError
+
+    try:
+        Document(BytesIO(content))
+    except Exception as error:
+        raise InvalidUploadedContractDocumentError from error
+
+    output_path = (
+        get_generated_files_directory()
+        / f"{uuid4().hex}.docx"
+    )
+
+    try:
+        output_path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        output_path.write_bytes(content)
+        version_number = (
+            get_next_contract_document_version_number(
+                session=session,
+                contract_id=contract.id,
+            )
+        )
+        file_sha256 = sha256(content).hexdigest()
+        document_version = ContractDocumentVersion(
+            contract_id=contract.id,
+            version_number=version_number,
+            source=ContractDocumentSource.UPLOADED.value,
+            template_id=None,
+            template_name=None,
+            template_version=None,
+            source_data={
+                "upload": {
+                    "original_file_name": (
+                        original_file_name
+                    ),
+                    "content_type": upload.content_type,
+                },
+            },
+            file_name=original_file_name,
+            storage_path=str(output_path),
+            file_sha256=file_sha256,
+            file_size_bytes=len(content),
+            created_by_user_id=actor_user_id,
+        )
+        session.add(document_version)
+        session.flush()
+
+        event = ContractEvent(
+            contract_id=contract.id,
+            event_type=(
+                ContractEventType.UPLOADED.value
+            ),
+            actor_user_id=actor_user_id,
+            event_data={
+                "document_version_id": (
+                    document_version.id
+                ),
+                "version_number": version_number,
+                "file_name": original_file_name,
+                "file_sha256": file_sha256,
+            },
+        )
+        session.add(event)
+
+        session.commit()
+        session.refresh(document_version)
+    except Exception:
+        session.rollback()
+        output_path.unlink(missing_ok=True)
+        raise
+
+    return document_version
 
 
 def get_generated_contract_docx(

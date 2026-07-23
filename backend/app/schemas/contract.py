@@ -18,6 +18,9 @@ from app.models.contract_party_role import (
 from app.models.contract_event import (
     ContractEventType,
 )
+from app.models.contract_document_version import (
+    ContractDocumentSource,
+)
 
 
 class ContractStatusUpdate(BaseModel):
@@ -56,9 +59,10 @@ class ContractDocumentVersionRead(BaseModel):
     id: int
     contract_id: int
     version_number: int
-    template_id: int
-    template_name: str
-    template_version: int
+    source: ContractDocumentSource
+    template_id: int | None
+    template_name: str | None
+    template_version: int | None
     source_data: dict[str, Any]
     file_name: str
     file_sha256: str | None

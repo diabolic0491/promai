@@ -30,6 +30,7 @@ class ContractEventType(StrEnum):
     ARCHIVED = "archived"
     RESTORED = "restored"
     GENERATED = "generated"
+    UPLOADED = "uploaded"
 
 
 class ContractEvent(Base):

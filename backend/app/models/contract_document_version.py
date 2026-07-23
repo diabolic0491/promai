@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
@@ -27,6 +28,11 @@ if TYPE_CHECKING:
         DocumentTemplate,
     )
     from app.models.user import User
+
+
+class ContractDocumentSource(StrEnum):
+    GENERATED = "generated"
+    UPLOADED = "uploaded"
 
 
 class ContractDocumentVersion(Base):
@@ -58,6 +64,30 @@ class ContractDocumentVersion(Base):
             name=(
                 "ck_contract_document_versions_"
                 "file_size_non_negative"
+            ),
+        ),
+        CheckConstraint(
+            "source IN ('generated', 'uploaded')",
+            name=(
+                "ck_contract_document_versions_"
+                "source"
+            ),
+        ),
+        CheckConstraint(
+            (
+                "(source = 'generated' "
+                "AND template_id IS NOT NULL "
+                "AND template_name IS NOT NULL "
+                "AND template_version IS NOT NULL) "
+                "OR "
+                "(source = 'uploaded' "
+                "AND template_id IS NULL "
+                "AND template_name IS NULL "
+                "AND template_version IS NULL)"
+            ),
+            name=(
+                "ck_contract_document_versions_"
+                "source_template"
             ),
         ),
         UniqueConstraint(
@@ -96,23 +126,32 @@ class ContractDocumentVersion(Base):
         nullable=False,
     )
 
-    template_id: Mapped[int] = mapped_column(
+    source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=ContractDocumentSource.GENERATED.value,
+        server_default=(
+            ContractDocumentSource.GENERATED.value
+        ),
+    )
+
+    template_id: Mapped[int | None] = mapped_column(
         ForeignKey(
             "document_templates.id",
             ondelete="RESTRICT",
         ),
-        nullable=False,
+        nullable=True,
         index=True,
     )
 
-    template_name: Mapped[str] = mapped_column(
+    template_name: Mapped[str | None] = mapped_column(
         String(255),
-        nullable=False,
+        nullable=True,
     )
 
-    template_version: Mapped[int] = mapped_column(
+    template_version: Mapped[int | None] = mapped_column(
         Integer,
-        nullable=False,
+        nullable=True,
     )
 
     source_data: Mapped[
@@ -166,7 +205,7 @@ class ContractDocumentVersion(Base):
         back_populates="document_versions",
     )
 
-    template: Mapped["DocumentTemplate"] = (
+    template: Mapped["DocumentTemplate | None"] = (
         relationship()
     )
 

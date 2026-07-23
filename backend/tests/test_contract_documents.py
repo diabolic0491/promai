@@ -233,6 +233,16 @@ def create_contract(
     return response.json()
 
 
+def build_contract_document_content(
+    text: str = "Внешний договор контрагента",
+) -> bytes:
+    stream = BytesIO()
+    document = Document()
+    document.add_paragraph(text)
+    document.save(stream)
+    return stream.getvalue()
+
+
 def document_text(content: bytes) -> str:
     document = Document(BytesIO(content))
     return "\n".join(
@@ -916,3 +926,389 @@ def test_missing_contract_document_version_returns_not_found(
     assert response.json() == {
         "detail": "Версия документа договора не найдена",
     }
+
+
+def test_upload_contract_docx_creates_version(
+    client: TestClient,
+    storage_root: Path,
+) -> None:
+    counterparty = create_counterparty(client)
+    contract = create_contract(
+        client,
+        counterparty["id"],
+        template_id=None,
+    )
+    content = build_contract_document_content()
+
+    response = client.post(
+        (
+            f"/contracts/{contract['id']}"
+            "/versions/upload"
+        ),
+        files={
+            "file": (
+                "Договор контрагента.docx",
+                content,
+                DOCX_MEDIA_TYPE,
+            ),
+        },
+    )
+
+    assert response.status_code == 201
+    version = response.json()
+    assert version["version_number"] == 1
+    assert version["source"] == "uploaded"
+    assert version["template_id"] is None
+    assert version["template_name"] is None
+    assert version["template_version"] is None
+    assert version["file_name"] == (
+        "Договор контрагента.docx"
+    )
+    assert version["file_sha256"] == (
+        sha256(content).hexdigest()
+    )
+    assert version["file_size_bytes"] == len(content)
+    assert version["created_by_user_id"] is not None
+    assert version["source_data"] == {
+        "upload": {
+            "original_file_name": (
+                "Договор контрагента.docx"
+            ),
+            "content_type": DOCX_MEDIA_TYPE,
+        },
+    }
+
+    stored_files = list(
+        (
+            storage_root
+            / "generated"
+            / "contracts"
+        ).glob("*.docx")
+    )
+    assert len(stored_files) == 1
+    assert stored_files[0].read_bytes() == content
+
+    versions_response = client.get(
+        f"/contracts/{contract['id']}/versions"
+    )
+    assert versions_response.status_code == 200
+    assert versions_response.json() == [version]
+
+    version_download_response = client.get(
+        (
+            f"/contracts/{contract['id']}"
+            "/versions/1/download"
+        )
+    )
+    assert version_download_response.status_code == 200
+    assert version_download_response.content == content
+    assert (
+        version_download_response.headers[
+            "content-disposition"
+        ]
+        .lower()
+        .startswith("attachment;")
+    )
+
+    latest_download_response = client.get(
+        f"/contracts/{contract['id']}/download"
+    )
+    assert latest_download_response.status_code == 200
+    assert latest_download_response.content == content
+
+    events_response = client.get(
+        f"/contracts/{contract['id']}/events"
+    )
+    assert events_response.status_code == 200
+    uploaded_event = events_response.json()[0]
+    assert uploaded_event["event_type"] == "uploaded"
+    assert uploaded_event["event_data"][
+        "document_version_id"
+    ] == version["id"]
+    assert uploaded_event["event_data"][
+        "version_number"
+    ] == 1
+    assert uploaded_event["event_data"][
+        "file_name"
+    ] == "Договор контрагента.docx"
+    assert uploaded_event["event_data"][
+        "file_sha256"
+    ] == sha256(content).hexdigest()
+
+
+def test_uploaded_and_generated_versions_share_sequence(
+    client: TestClient,
+    storage_root: Path,
+) -> None:
+    counterparty = create_counterparty(client)
+    update_organization_profile(client)
+    template_path = storage_root / "source.docx"
+    create_template_file(template_path)
+    template = upload_template(
+        client,
+        template_path,
+    )
+    contract = create_contract(
+        client,
+        counterparty["id"],
+        template_id=template["id"],
+        form_data=contract_form_data(),
+    )
+
+    first_generated = client.post(
+        f"/contracts/{contract['id']}/generate"
+    )
+    assert first_generated.status_code == 200
+
+    uploaded_content = (
+        build_contract_document_content(
+            "Версия от контрагента"
+        )
+    )
+    uploaded = client.post(
+        (
+            f"/contracts/{contract['id']}"
+            "/versions/upload"
+        ),
+        files={
+            "file": (
+                "external.docx",
+                uploaded_content,
+                DOCX_MEDIA_TYPE,
+            ),
+        },
+    )
+    assert uploaded.status_code == 201
+    assert uploaded.json()["version_number"] == 2
+
+    second_generated = client.post(
+        f"/contracts/{contract['id']}/generate"
+    )
+    assert second_generated.status_code == 200
+
+    versions_response = client.get(
+        f"/contracts/{contract['id']}/versions"
+    )
+    assert versions_response.status_code == 200
+    versions = versions_response.json()
+
+    assert [
+        version["version_number"]
+        for version in versions
+    ] == [3, 2, 1]
+    assert [
+        version["source"]
+        for version in versions
+    ] == ["generated", "uploaded", "generated"]
+
+    uploaded_download = client.get(
+        (
+            f"/contracts/{contract['id']}"
+            "/versions/2/download"
+        )
+    )
+    assert uploaded_download.status_code == 200
+    assert uploaded_download.content == uploaded_content
+
+    latest_download = client.get(
+        f"/contracts/{contract['id']}/download"
+    )
+    assert latest_download.status_code == 200
+    assert latest_download.content == (
+        second_generated.content
+    )
+
+
+@pytest.mark.parametrize(
+    ("file_name", "content"),
+    [
+        (
+            "contract.txt",
+            build_contract_document_content(),
+        ),
+        (
+            "contract.docx",
+            b"not a docx archive",
+        ),
+    ],
+)
+def test_upload_rejects_invalid_contract_document(
+    client: TestClient,
+    storage_root: Path,
+    file_name: str,
+    content: bytes,
+) -> None:
+    counterparty = create_counterparty(client)
+    contract = create_contract(
+        client,
+        counterparty["id"],
+        template_id=None,
+    )
+
+    response = client.post(
+        (
+            f"/contracts/{contract['id']}"
+            "/versions/upload"
+        ),
+        files={
+            "file": (
+                file_name,
+                content,
+                DOCX_MEDIA_TYPE,
+            ),
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": (
+            "Необходимо загрузить корректный "
+            "DOCX-файл"
+        ),
+    }
+    assert client.get(
+        f"/contracts/{contract['id']}/versions"
+    ).json() == []
+    assert not list(
+        storage_root.rglob("*.docx")
+    )
+
+
+def test_upload_rejects_oversized_contract_document(
+    client: TestClient,
+    storage_root: Path,
+) -> None:
+    counterparty = create_counterparty(client)
+    contract = create_contract(
+        client,
+        counterparty["id"],
+        template_id=None,
+    )
+    content = b"x" * (
+        contract_documents
+        .MAX_CONTRACT_DOCUMENT_SIZE_BYTES
+        + 1
+    )
+
+    response = client.post(
+        (
+            f"/contracts/{contract['id']}"
+            "/versions/upload"
+        ),
+        files={
+            "file": (
+                "contract.docx",
+                content,
+                DOCX_MEDIA_TYPE,
+            ),
+        },
+    )
+
+    assert response.status_code == 413
+    assert response.json() == {
+        "detail": "Размер документа превышает 10 МБ",
+    }
+    assert client.get(
+        f"/contracts/{contract['id']}/versions"
+    ).json() == []
+    assert not list(
+        storage_root.rglob("*.docx")
+    )
+
+
+def test_archived_contract_rejects_document_upload(
+    client: TestClient,
+    storage_root: Path,
+) -> None:
+    counterparty = create_counterparty(client)
+    contract = create_contract(
+        client,
+        counterparty["id"],
+        template_id=None,
+    )
+    archive_response = client.post(
+        f"/contracts/{contract['id']}/archive"
+    )
+    assert archive_response.status_code == 200
+
+    response = client.post(
+        (
+            f"/contracts/{contract['id']}"
+            "/versions/upload"
+        ),
+        files={
+            "file": (
+                "contract.docx",
+                build_contract_document_content(),
+                DOCX_MEDIA_TYPE,
+            ),
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": (
+            "Архивный договор сначала "
+            "необходимо восстановить"
+        ),
+    }
+    assert client.get(
+        f"/contracts/{contract['id']}/versions"
+    ).json() == []
+    assert not list(
+        storage_root.rglob("*.docx")
+    )
+
+
+def test_upload_removes_file_when_commit_fails(
+    client: TestClient,
+    db_session: Session,
+    storage_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    counterparty = create_counterparty(client)
+    contract = create_contract(
+        client,
+        counterparty["id"],
+        template_id=None,
+    )
+
+    def fail_commit() -> None:
+        raise RuntimeError("commit failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            db_session,
+            "commit",
+            fail_commit,
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match="commit failed",
+        ):
+            client.post(
+                (
+                    f"/contracts/{contract['id']}"
+                    "/versions/upload"
+                ),
+                files={
+                    "file": (
+                        "contract.docx",
+                        build_contract_document_content(),
+                        DOCX_MEDIA_TYPE,
+                    ),
+                },
+            )
+
+    assert not list(
+        storage_root.rglob("*.docx")
+    )
+    assert (
+        db_session.query(
+            ContractDocumentVersion
+        )
+        .filter_by(contract_id=contract["id"])
+        .count()
+        == 0
+    )

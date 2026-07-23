@@ -3,9 +3,11 @@ from typing import Annotated
 from fastapi import (
     APIRouter,
     Depends,
+    File,
     HTTPException,
     Path,
     Query,
+    UploadFile,
     status,
 )
 from fastapi.responses import FileResponse
@@ -117,7 +119,11 @@ def raise_contract_document_service_error(
 
     if isinstance(
         error,
-        contract_documents.ArchivedContractGenerationError,
+        (
+            contract_documents
+            .ArchivedContractGenerationError,
+            contract_documents.ArchivedContractUploadError,
+        ),
     ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -190,6 +196,35 @@ def raise_contract_document_service_error(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
                 "Версия документа договора не найдена"
+            ),
+        )
+
+    if isinstance(
+        error,
+        contract_documents
+        .InvalidUploadedContractDocumentError,
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_ENTITY
+            ),
+            detail=(
+                "Необходимо загрузить корректный "
+                "DOCX-файл"
+            ),
+        )
+
+    if isinstance(
+        error,
+        contract_documents
+        .UploadedContractDocumentTooLargeError,
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
+            ),
+            detail=(
+                "Размер документа превышает 10 МБ"
             ),
         )
 
@@ -324,6 +359,36 @@ def get_contract_document_versions(
         )
     except Exception as error:
         raise_contract_document_service_error(error)
+
+
+@router.post(
+    "/{contract_id}/versions/upload",
+    response_model=ContractDocumentVersionRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def upload_contract_document_version(
+    contract_id: int,
+    current_user: CurrentUser,
+    session: DatabaseSession,
+    file: Annotated[
+        UploadFile,
+        File(),
+    ],
+) -> ContractDocumentVersion:
+    try:
+        return (
+            contract_documents
+            .upload_contract_document_version(
+                session=session,
+                contract_id=contract_id,
+                actor_user_id=current_user.id,
+                upload=file,
+            )
+        )
+    except Exception as error:
+        raise_contract_document_service_error(error)
+    finally:
+        file.file.close()
 
 
 @router.get(
