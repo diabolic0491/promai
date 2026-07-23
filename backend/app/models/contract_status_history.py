@@ -18,6 +18,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.contract import Contract
+    from app.models.user import User
 
 
 class ContractStatusHistory(Base):
@@ -47,6 +48,17 @@ class ContractStatusHistory(Base):
         nullable=False,
     )
 
+    changed_by_user_id: Mapped[int | None] = (
+        mapped_column(
+            ForeignKey(
+                "users.id",
+                ondelete="SET NULL",
+            ),
+            nullable=True,
+            index=True,
+        )
+    )
+
     changed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -56,4 +68,11 @@ class ContractStatusHistory(Base):
 
     contract: Mapped["Contract"] = relationship(
         back_populates="status_history",
+    )
+
+    changed_by_user: Mapped[
+        "User | None"
+    ] = relationship(
+        back_populates="contract_status_changes",
+        foreign_keys=[changed_by_user_id],
     )

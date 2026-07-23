@@ -395,6 +395,8 @@ def remove_generated_file(
 def generate_contract_docx(
     session: Session,
     contract_id: int,
+    *,
+    actor_user_id: int,
 ) -> GeneratedContractFile:
     contract = get_contract_by_id(
         session=session,
@@ -462,6 +464,7 @@ def generate_contract_docx(
     event = ContractEvent(
         contract_id=contract.id,
         event_type=ContractEventType.GENERATED.value,
+        actor_user_id=actor_user_id,
         event_data={
             "template_id": template.id,
             "generated_file_name": generated_file_name,

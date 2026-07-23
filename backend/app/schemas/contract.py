@@ -32,6 +32,7 @@ class ContractStatusHistoryRead(BaseModel):
     contract_id: int
     from_status: ContractStatus | None
     to_status: ContractStatus
+    changed_by_user_id: int | None
     changed_at: datetime
 
 class ContractEventRead(BaseModel):
@@ -43,6 +44,7 @@ class ContractEventRead(BaseModel):
     contract_id: int
     event_type: ContractEventType
     event_data: dict[str, object] | None
+    actor_user_id: int | None
     created_at: datetime
 
 

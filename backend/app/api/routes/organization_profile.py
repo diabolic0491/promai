@@ -9,6 +9,10 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
+from app.api.dependencies.auth import (
+    AdminUser,
+    get_current_active_user,
+)
 from app.models.organization_profile import OrganizationProfile
 from app.schemas.organization_profile import (
     OrganizationProfileRead,
@@ -20,6 +24,9 @@ from app.services import organization_profile as service
 router = APIRouter(
     prefix="/organization-profile",
     tags=["Organization profile"],
+    dependencies=[
+        Depends(get_current_active_user),
+    ],
 )
 
 DatabaseSession = Annotated[
@@ -50,6 +57,7 @@ def get_organization_profile(
 )
 def update_organization_profile(
     payload: OrganizationProfileUpdate,
+    _: AdminUser,
     session: DatabaseSession,
 ) -> OrganizationProfile:
     try:
