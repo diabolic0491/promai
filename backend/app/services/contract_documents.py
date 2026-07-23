@@ -1,12 +1,20 @@
 import re
+from datetime import date
 from dataclasses import dataclass
+from decimal import Decimal
+from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
 
+from fastapi.encoders import jsonable_encoder
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.contract import Contract
+from app.models.contract_document_version import (
+    ContractDocumentVersion,
+)
 from app.models.contract_event import (
     ContractEvent,
     ContractEventType,
@@ -96,11 +104,31 @@ class GeneratedContractFileNotFoundError(Exception):
     """Сгенерированный DOCX-файл отсутствует."""
 
 
+class ContractDocumentVersionNotFoundError(Exception):
+    """Версия документа договора не найдена."""
+
+
 def get_contract_by_id(
     session: Session,
     contract_id: int,
 ) -> Contract:
     contract = session.get(Contract, contract_id)
+
+    if contract is None:
+        raise ContractDocumentNotFoundError
+
+    return contract
+
+
+def get_contract_for_generation(
+    session: Session,
+    contract_id: int,
+) -> Contract:
+    contract = session.scalar(
+        select(Contract)
+        .where(Contract.id == contract_id)
+        .with_for_update()
+    )
 
     if contract is None:
         raise ContractDocumentNotFoundError
@@ -294,6 +322,88 @@ def build_contract_template_values(
     return values
 
 
+def build_generation_source_data(
+    contract: Contract,
+    *,
+    counterparty: Counterparty,
+    organization: OrganizationProfile | None,
+    template: DocumentTemplate,
+    render_values: dict[str, object],
+) -> dict[str, object]:
+    source_data: dict[str, object] = {
+        "contract": {
+            "id": contract.id,
+            "counterparty_id": contract.counterparty_id,
+            "template_id": contract.template_id,
+            "number": contract.number,
+            "title": contract.title,
+            "contract_date": contract.contract_date,
+            "start_date": contract.start_date,
+            "end_date": contract.end_date,
+            "amount": contract.amount,
+            "currency": contract.currency,
+            "status": contract.status,
+            "notes": contract.notes,
+            "owner_role": contract.owner_role,
+            "counterparty_role": (
+                contract.counterparty_role
+            ),
+            "form_data": contract.form_data,
+        },
+        "counterparty": {
+            "id": counterparty.id,
+            "unp": counterparty.unp,
+            "name": counterparty.name,
+            "short_name": counterparty.short_name,
+            "legal_address": counterparty.legal_address,
+            "status": counterparty.status,
+        },
+        "organization": (
+            {
+                "id": organization.id,
+                "name": organization.name,
+                "short_name": organization.short_name,
+                "unp": organization.unp,
+                "legal_address": (
+                    organization.legal_address
+                ),
+                "email": organization.email,
+                "phone": organization.phone,
+                "director_name": (
+                    organization.director_name
+                ),
+                "director_position": (
+                    organization.director_position
+                ),
+                "bank_name": organization.bank_name,
+                "bank_account": (
+                    organization.bank_account
+                ),
+                "bank_code": organization.bank_code,
+            }
+            if organization is not None
+            else None
+        ),
+        "template": {
+            "id": template.id,
+            "name": template.name,
+            "version": template.version,
+            "required_variables": (
+                template.required_variables
+            ),
+        },
+        "render_values": render_values,
+    }
+
+    return jsonable_encoder(
+        source_data,
+        custom_encoder={
+            date: lambda value: value.isoformat(),
+            Decimal: str,
+        },
+    )
+
+
 def build_generated_file_name(
     contract: Contract,
 ) -> str:
@@ -351,54 +461,13 @@ def resolve_generated_file_path(
     return candidate
 
 
-def remove_previous_generated_file(
-    raw_path: str | None,
-    *,
-    current_path: Path,
-) -> None:
-    if raw_path is None:
-        return
-
-    try:
-        previous_path = resolve_generated_file_path(
-            raw_path
-        )
-    except GeneratedContractFileNotFoundError:
-        return
-
-    if previous_path != current_path:
-        try:
-            previous_path.unlink(missing_ok=True)
-        except OSError:
-            return
-
-
-def remove_generated_file(
-    raw_path: str | None,
-) -> None:
-    if raw_path is None:
-        return
-
-    try:
-        generated_path = resolve_generated_file_path(
-            raw_path
-        )
-    except GeneratedContractFileNotFoundError:
-        return
-
-    try:
-        generated_path.unlink(missing_ok=True)
-    except OSError:
-        return
-
-
 def generate_contract_docx(
     session: Session,
     contract_id: int,
     *,
     actor_user_id: int,
 ) -> GeneratedContractFile:
-    contract = get_contract_by_id(
+    contract = get_contract_for_generation(
         session=session,
         contract_id=contract_id,
     )
@@ -452,41 +521,86 @@ def generate_contract_docx(
     except InvalidDocxTemplateError as error:
         raise InvalidContractDocxTemplateError from error
 
-    previous_storage_path = (
-        contract.generated_storage_path
-    )
-    generated_file_name = build_generated_file_name(
-        contract
-    )
-    contract.generated_file_name = generated_file_name
-    contract.generated_storage_path = str(output_path)
-
-    event = ContractEvent(
-        contract_id=contract.id,
-        event_type=ContractEventType.GENERATED.value,
-        actor_user_id=actor_user_id,
-        event_data={
-            "template_id": template.id,
-            "generated_file_name": generated_file_name,
-            "replaced_previous_file": (
-                previous_storage_path is not None
-            ),
-        },
-    )
-    session.add(event)
-
     try:
+        version_number = int(
+            session.scalar(
+                select(
+                    func.coalesce(
+                        func.max(
+                            ContractDocumentVersion
+                            .version_number
+                        ),
+                        0,
+                    )
+                    + 1
+                ).where(
+                    ContractDocumentVersion.contract_id
+                    == contract.id
+                )
+            )
+            or 1
+        )
+        generated_file_name = build_generated_file_name(
+            contract
+        )
+        file_content = output_path.read_bytes()
+        file_sha256 = sha256(file_content).hexdigest()
+
+        document_version = ContractDocumentVersion(
+            contract_id=contract.id,
+            version_number=version_number,
+            template_id=template.id,
+            template_name=template.name,
+            template_version=template.version,
+            source_data=build_generation_source_data(
+                contract,
+                counterparty=counterparty,
+                organization=organization,
+                template=template,
+                render_values=values,
+            ),
+            file_name=generated_file_name,
+            storage_path=str(output_path),
+            file_sha256=file_sha256,
+            file_size_bytes=len(file_content),
+            created_by_user_id=actor_user_id,
+        )
+        session.add(document_version)
+        session.flush()
+
+        contract.generated_file_name = (
+            generated_file_name
+        )
+        contract.generated_storage_path = str(
+            output_path
+        )
+
+        event = ContractEvent(
+            contract_id=contract.id,
+            event_type=(
+                ContractEventType.GENERATED.value
+            ),
+            actor_user_id=actor_user_id,
+            event_data={
+                "template_id": template.id,
+                "document_version_id": (
+                    document_version.id
+                ),
+                "version_number": version_number,
+                "generated_file_name": (
+                    generated_file_name
+                ),
+                "file_sha256": file_sha256,
+            },
+        )
+        session.add(event)
+
         session.commit()
         session.refresh(contract)
     except Exception:
         session.rollback()
         output_path.unlink(missing_ok=True)
         raise
-
-    remove_previous_generated_file(
-        previous_storage_path,
-        current_path=output_path,
-    )
 
     return GeneratedContractFile(
         path=output_path,
@@ -498,22 +612,104 @@ def get_generated_contract_docx(
     session: Session,
     contract_id: int,
 ) -> GeneratedContractFile:
-    contract = get_contract_by_id(
+    get_contract_by_id(
         session=session,
         contract_id=contract_id,
     )
 
-    if (
-        contract.generated_storage_path is None
-        or contract.generated_file_name is None
-    ):
+    version = session.scalar(
+        select(ContractDocumentVersion)
+        .where(
+            ContractDocumentVersion.contract_id
+            == contract_id
+        )
+        .order_by(
+            ContractDocumentVersion.version_number.desc()
+        )
+        .limit(1)
+    )
+
+    if version is None:
         raise GeneratedContractFileNotFoundError
 
     path = resolve_generated_file_path(
-        contract.generated_storage_path
+        version.storage_path
     )
 
     return GeneratedContractFile(
         path=path,
-        file_name=contract.generated_file_name,
+        file_name=version.file_name,
+    )
+
+
+def list_contract_document_versions(
+    session: Session,
+    contract_id: int,
+    *,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[ContractDocumentVersion]:
+    get_contract_by_id(
+        session=session,
+        contract_id=contract_id,
+    )
+
+    statement = (
+        select(ContractDocumentVersion)
+        .where(
+            ContractDocumentVersion.contract_id
+            == contract_id
+        )
+        .order_by(
+            ContractDocumentVersion.version_number.desc()
+        )
+        .offset(offset)
+        .limit(limit)
+    )
+
+    return list(session.scalars(statement).all())
+
+
+def get_contract_document_version(
+    session: Session,
+    contract_id: int,
+    version_number: int,
+) -> ContractDocumentVersion:
+    get_contract_by_id(
+        session=session,
+        contract_id=contract_id,
+    )
+
+    version = session.scalar(
+        select(ContractDocumentVersion).where(
+            ContractDocumentVersion.contract_id
+            == contract_id,
+            ContractDocumentVersion.version_number
+            == version_number,
+        )
+    )
+
+    if version is None:
+        raise ContractDocumentVersionNotFoundError
+
+    return version
+
+
+def get_contract_document_version_docx(
+    session: Session,
+    contract_id: int,
+    version_number: int,
+) -> GeneratedContractFile:
+    version = get_contract_document_version(
+        session=session,
+        contract_id=contract_id,
+        version_number=version_number,
+    )
+    path = resolve_generated_file_path(
+        version.storage_path
+    )
+
+    return GeneratedContractFile(
+        path=path,
+        file_name=version.file_name,
     )

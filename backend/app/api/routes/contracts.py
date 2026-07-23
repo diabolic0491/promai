@@ -4,6 +4,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Path,
     Query,
     status,
 )
@@ -16,6 +17,9 @@ from app.api.dependencies.auth import (
     get_current_active_user,
 )
 from app.models.contract import Contract
+from app.models.contract_document_version import (
+    ContractDocumentVersion,
+)
 from app.models.contract_event import ContractEvent
 from app.models.contract_status_history import (
     ContractStatusHistory,
@@ -23,6 +27,7 @@ from app.models.contract_status_history import (
 from app.models.enums import ContractStatus
 from app.schemas.contract import (
     ContractCreate,
+    ContractDocumentVersionRead,
     ContractEventRead,
     ContractRead,
     ContractStatusHistoryRead,
@@ -177,6 +182,17 @@ def raise_contract_document_service_error(
             ),
         )
 
+    if isinstance(
+        error,
+        contract_documents.ContractDocumentVersionNotFoundError,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                "Версия документа договора не найдена"
+            ),
+        )
+
     raise error
 
 
@@ -277,6 +293,62 @@ def list_contracts(
         include_archived=include_archived,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get(
+    "/{contract_id}/versions",
+    response_model=list[ContractDocumentVersionRead],
+)
+def get_contract_document_versions(
+    contract_id: int,
+    session: DatabaseSession,
+    limit: Annotated[
+        int,
+        Query(ge=1, le=100),
+    ] = 100,
+    offset: Annotated[
+        int,
+        Query(ge=0),
+    ] = 0,
+) -> list[ContractDocumentVersion]:
+    try:
+        return (
+            contract_documents
+            .list_contract_document_versions(
+                session=session,
+                contract_id=contract_id,
+                limit=limit,
+                offset=offset,
+            )
+        )
+    except Exception as error:
+        raise_contract_document_service_error(error)
+
+
+@router.get(
+    "/{contract_id}/versions/{version_number}/download",
+    response_class=FileResponse,
+)
+def download_contract_document_version(
+    contract_id: int,
+    version_number: Annotated[int, Path(gt=0)],
+    session: DatabaseSession,
+) -> FileResponse:
+    try:
+        generated_file = (
+            contract_documents
+            .get_contract_document_version_docx(
+                session=session,
+                contract_id=contract_id,
+                version_number=version_number,
+            )
+        )
+    except Exception as error:
+        raise_contract_document_service_error(error)
+
+    return create_contract_docx_file_response(
+        generated_file
     )
 
 

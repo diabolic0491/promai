@@ -181,7 +181,7 @@ def iter_document_paragraphs(
     )
 
     seen_roots: set[int] = set()
-    seen_paragraphs: set[int] = set()
+    seen_paragraphs: set[Any] = set()
 
     for root in roots:
         root_id = id(root)
@@ -194,12 +194,10 @@ def iter_document_paragraphs(
         for paragraph_element in root.xpath(
             ".//w:p"
         ):
-            paragraph_id = id(paragraph_element)
-
-            if paragraph_id in seen_paragraphs:
+            if paragraph_element in seen_paragraphs:
                 continue
 
-            seen_paragraphs.add(paragraph_id)
+            seen_paragraphs.add(paragraph_element)
             yield Paragraph(
                 paragraph_element,
                 root,

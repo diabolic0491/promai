@@ -1,4 +1,7 @@
 from app.models.contract import Contract
+from app.models.contract_document_version import (
+    ContractDocumentVersion,
+)
 from app.models.contract_event import (
     ContractEvent,
     ContractEventType,
@@ -29,6 +32,7 @@ from app.models.user import User, UserRole
 
 __all__ = [
     "Contract",
+    "ContractDocumentVersion",
     "ContractEvent",
     "ContractEventType",
     "ContractPartyRole",

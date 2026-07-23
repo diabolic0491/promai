@@ -19,6 +19,9 @@ from app.db.base import Base
 
 
 if TYPE_CHECKING:
+    from app.models.contract_document_version import (
+        ContractDocumentVersion,
+    )
     from app.models.contract_event import ContractEvent
     from app.models.contract_status_history import (
         ContractStatusHistory,
@@ -106,6 +109,15 @@ class User(Base):
     contract_events: Mapped[list["ContractEvent"]] = relationship(
         back_populates="actor_user",
         foreign_keys="ContractEvent.actor_user_id",
+    )
+
+    contract_document_versions: Mapped[
+        list["ContractDocumentVersion"]
+    ] = relationship(
+        back_populates="created_by_user",
+        foreign_keys=(
+            "ContractDocumentVersion.created_by_user_id"
+        ),
     )
 
     contract_status_changes: Mapped[list["ContractStatusHistory"]] = relationship(
