@@ -15,6 +15,13 @@ from docx.text.paragraph import Paragraph
 PLACEHOLDER_PATTERN = re.compile(
     r"{{\s*([A-Za-z0-9_.-]+)\s*}}"
 )
+PLACEHOLDER_CANDIDATE_PATTERN = re.compile(
+    r"{{(.*?)}}"
+)
+TEMPLATE_VARIABLE_NAME_PATTERN = re.compile(
+    r"[A-Za-z_][A-Za-z0-9_-]*"
+    r"(?:\.[A-Za-z_][A-Za-z0-9_-]*)*"
+)
 
 RUSSIAN_MONTHS = (
     "января",
@@ -166,6 +173,17 @@ def normalize_required_variable(
     return normalized
 
 
+def is_valid_template_variable_name(
+    variable_name: str,
+) -> bool:
+    return (
+        TEMPLATE_VARIABLE_NAME_PATTERN.fullmatch(
+            variable_name
+        )
+        is not None
+    )
+
+
 def iter_document_paragraphs(
     document: DocxDocument,
 ) -> Iterator[Paragraph]:
@@ -220,6 +238,29 @@ def get_template_variables(
         )
 
     return variables
+
+
+def get_invalid_template_variables(
+    document: DocxDocument,
+) -> set[str]:
+    invalid_variables: set[str] = set()
+
+    for paragraph in iter_document_paragraphs(
+        document
+    ):
+        for match in (
+            PLACEHOLDER_CANDIDATE_PATTERN.finditer(
+                paragraph.text
+            )
+        ):
+            variable_name = match.group(1).strip()
+
+            if not is_valid_template_variable_name(
+                variable_name
+            ):
+                invalid_variables.add(variable_name)
+
+    return invalid_variables
 
 
 def replace_paragraph_placeholders(

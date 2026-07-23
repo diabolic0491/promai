@@ -88,8 +88,24 @@ def create_document_template(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 "required_variables должен быть "
-                "JSON-массивом непустых строк"
+                "JSON-массивом корректных имён "
+                "переменных"
             ),
+        )
+    except (
+        service.InvalidDocumentTemplateVariablesError
+    ) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "message": (
+                    "DOCX содержит некорректные "
+                    "имена переменных"
+                ),
+                "invalid_variables": (
+                    error.variable_names
+                ),
+            },
         )
     except service.InvalidDocumentTemplateFileError:
         raise HTTPException(
