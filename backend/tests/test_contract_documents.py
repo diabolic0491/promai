@@ -13,6 +13,9 @@ from app.models.contract import Contract
 from app.models.contract_document_version import (
     ContractDocumentVersion,
 )
+from app.models.document_template import (
+    DocumentTemplate,
+)
 from app.services import (
     contract_documents,
     document_templates,
@@ -255,6 +258,145 @@ def test_contract_template_can_be_uploaded(
     assert template["template_type"] == "contract"
     assert template["file_name"] == (
         "contract-template.docx"
+    )
+    assert template["required_variables"] == [
+        "contract.amount",
+        "contract.currency",
+        "contract.day",
+        "contract.month",
+        "contract.number",
+        "contract.subject",
+        "contract.year",
+        "counterparty.account",
+        "counterparty.address",
+        "counterparty.director_name",
+        "counterparty.name",
+        "organization.account",
+        "organization.address",
+        "organization.authority",
+        "organization.name",
+    ]
+
+
+def test_template_upload_combines_and_normalizes_variables(
+    client: TestClient,
+    storage_root: Path,
+) -> None:
+    template_path = storage_root / "variables.docx"
+    document = Document()
+    document.add_paragraph(
+        "Номер: {{contract.number}}"
+    )
+    document.sections[0].header.paragraphs[0].text = (
+        "Дата: {{approval.date}}"
+    )
+    document.save(template_path)
+
+    template = upload_template(
+        client,
+        template_path,
+        required_variables=[
+            " {{ organization.authority }} ",
+            "contract.number",
+            "organization.authority",
+        ],
+    )
+
+    assert template["required_variables"] == [
+        "approval.date",
+        "contract.number",
+        "organization.authority",
+    ]
+
+
+def test_template_upload_rejects_invalid_required_variable(
+    client: TestClient,
+    storage_root: Path,
+) -> None:
+    template_path = storage_root / "invalid-required.docx"
+    create_template_file(template_path)
+
+    with template_path.open("rb") as template_file:
+        response = client.post(
+            "/document-templates",
+            data={
+                "name": "Некорректный шаблон",
+                "template_type": "contract",
+                "required_variables": json.dumps(
+                    ["contract subject"],
+                    ensure_ascii=False,
+                ),
+            },
+            files={
+                "file": (
+                    "invalid-required.docx",
+                    template_file,
+                    DOCX_MEDIA_TYPE,
+                ),
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": (
+            "required_variables должен быть "
+            "JSON-массивом корректных имён переменных"
+        ),
+    }
+    templates_directory = storage_root / "templates"
+    assert (
+        not templates_directory.exists()
+        or not list(templates_directory.iterdir())
+    )
+
+
+def test_template_upload_rejects_invalid_docx_variable(
+    client: TestClient,
+    db_session: Session,
+    storage_root: Path,
+) -> None:
+    template_path = storage_root / "invalid-docx.docx"
+    document = Document()
+    document.add_paragraph(
+        "Предмет: {{contract subject}}"
+    )
+    document.save(template_path)
+
+    with template_path.open("rb") as template_file:
+        response = client.post(
+            "/document-templates",
+            data={
+                "name": "Некорректный шаблон",
+                "template_type": "contract",
+                "required_variables": "[]",
+            },
+            files={
+                "file": (
+                    "invalid-docx.docx",
+                    template_file,
+                    DOCX_MEDIA_TYPE,
+                ),
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {
+            "message": (
+                "DOCX содержит некорректные "
+                "имена переменных"
+            ),
+            "invalid_variables": [
+                "contract subject",
+            ],
+        },
+    }
+    assert not list(
+        (storage_root / "templates").iterdir()
+    )
+    assert (
+        db_session.query(DocumentTemplate).count()
+        == 0
     )
 
 

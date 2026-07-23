@@ -16,6 +16,12 @@ from app.models.document_template import (
 from app.schemas.document_template import (
     DocumentTemplateUpdate,
 )
+from app.services.technical_specification_docx import (
+    get_invalid_template_variables,
+    get_template_variables,
+    is_valid_template_variable_name,
+    normalize_required_variable,
+)
 
 
 settings = get_settings()
@@ -52,6 +58,20 @@ class DocumentTemplateFileTooLargeError(Exception):
 class InvalidRequiredVariablesError(Exception):
     """Некорректный список переменных шаблона."""
 
+
+class InvalidDocumentTemplateVariablesError(
+    Exception
+):
+    def __init__(
+        self,
+        variable_names: list[str],
+    ) -> None:
+        self.variable_names = variable_names
+        super().__init__(
+            ", ".join(variable_names)
+        )
+
+
 class DocumentTemplateAlreadyActiveError(Exception):
     """Шаблон уже активен."""
 
@@ -73,24 +93,43 @@ def parse_required_variables(
         if not isinstance(item, str):
             raise InvalidRequiredVariablesError
 
-        variable = item.strip()
+        variable = normalize_required_variable(
+            item
+        )
 
-        if not variable:
+        if not is_valid_template_variable_name(
+            variable
+        ):
             raise InvalidRequiredVariablesError
 
         if variable not in normalized:
             normalized.append(variable)
 
-    return normalized
+    return sorted(normalized)
 
 
-def validate_docx_file(
+def extract_docx_template_variables(
     file_path: Path,
-) -> None:
+) -> list[str]:
     try:
-        Document(file_path)
+        document = Document(file_path)
     except Exception as error:
         raise InvalidDocumentTemplateFileError from error
+
+    invalid_variables = sorted(
+        get_invalid_template_variables(document)
+    )
+
+    if invalid_variables:
+        raise InvalidDocumentTemplateVariablesError(
+            invalid_variables
+        )
+
+    template_variables = get_template_variables(
+        document
+    )
+
+    return sorted(template_variables)
 
 
 def create_document_template(
@@ -143,7 +182,15 @@ def create_document_template(
 
     try:
         stored_path.write_bytes(content)
-        validate_docx_file(stored_path)
+        template_variables = (
+            extract_docx_template_variables(
+                stored_path
+            )
+        )
+        required_variables = sorted(
+            set(required_variables)
+            | set(template_variables)
+        )
 
         template = DocumentTemplate(
             name=normalized_name,
