@@ -48,6 +48,25 @@ class ContractEventRead(BaseModel):
     created_at: datetime
 
 
+class ContractDocumentVersionRead(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
+
+    id: int
+    contract_id: int
+    version_number: int
+    template_id: int
+    template_name: str
+    template_version: int
+    source_data: dict[str, Any]
+    file_name: str
+    file_sha256: str | None
+    file_size_bytes: int | None
+    created_by_user_id: int | None
+    created_at: datetime
+
+
 class ContractCreate(BaseModel):
     counterparty_id: int = Field(gt=0)
 

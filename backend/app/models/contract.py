@@ -36,6 +36,9 @@ if TYPE_CHECKING:
     from app.models.contract_event import (
         ContractEvent,
     )
+    from app.models.contract_document_version import (
+        ContractDocumentVersion,
+    )
 
 
 class Contract(Base):
@@ -200,7 +203,17 @@ class Contract(Base):
         ),
     )
 
-
+    document_versions: Mapped[
+        list["ContractDocumentVersion"]
+    ] = relationship(
+        back_populates="contract",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by=(
+            "ContractDocumentVersion."
+            "version_number.desc()"
+        ),
+    )
 
     @property
     def is_archived(self) -> bool:

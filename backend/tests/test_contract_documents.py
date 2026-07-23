@@ -1,4 +1,5 @@
 import json
+from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models.contract import Contract
+from app.models.contract_document_version import (
+    ContractDocumentVersion,
+)
 from app.services import (
     contract_documents,
     document_templates,
@@ -329,8 +333,53 @@ def test_generate_and_download_contract_docx(
         template["id"]
     )
     assert events[0]["event_data"][
-        "replaced_previous_file"
-    ] is False
+        "version_number"
+    ] == 1
+    assert events[0]["event_data"]["file_sha256"] == (
+        sha256(response.content).hexdigest()
+    )
+
+    versions_response = client.get(
+        f"/contracts/{contract['id']}/versions"
+    )
+    assert versions_response.status_code == 200
+    versions = versions_response.json()
+
+    assert len(versions) == 1
+    assert versions[0]["version_number"] == 1
+    assert versions[0]["template_id"] == template["id"]
+    assert versions[0]["template_name"] == (
+        "Шаблон договора"
+    )
+    assert versions[0]["template_version"] == 1
+    assert versions[0]["file_sha256"] == (
+        sha256(response.content).hexdigest()
+    )
+    assert versions[0]["file_size_bytes"] == len(
+        response.content
+    )
+    assert versions[0]["created_by_user_id"] is not None
+    assert versions[0]["source_data"]["contract"][
+        "number"
+    ] == "Д-101/26"
+    assert versions[0]["source_data"]["contract"][
+        "amount"
+    ] == "1000.00"
+    assert versions[0]["source_data"]["counterparty"][
+        "unp"
+    ] == "900000101"
+    assert versions[0]["source_data"]["organization"][
+        "unp"
+    ] == "590000001"
+
+    version_download_response = client.get(
+        f"/contracts/{contract['id']}/versions/1/download"
+    )
+    assert version_download_response.status_code == 200
+    assert (
+        version_download_response.content
+        == response.content
+    )
 
 
 def test_generate_reports_all_missing_variables(
@@ -466,7 +515,7 @@ def test_archived_contract_cannot_be_generated(
     assert response.status_code == 409
 
 
-def test_repeated_generation_replaces_previous_file(
+def test_repeated_generation_preserves_all_versions(
     client: TestClient,
     db_session: Session,
     storage_root: Path,
@@ -519,7 +568,45 @@ def test_repeated_generation_replaces_previous_file(
 
     assert second_path.is_file()
     assert second_path != first_path
-    assert not first_path.exists()
+    assert first_path.is_file()
+
+    versions_response = client.get(
+        f"/contracts/{contract_data['id']}/versions"
+    )
+    assert versions_response.status_code == 200
+    versions = versions_response.json()
+
+    assert [
+        version["version_number"]
+        for version in versions
+    ] == [2, 1]
+    assert versions[0]["file_sha256"] == (
+        sha256(second_response.content).hexdigest()
+    )
+    assert versions[1]["file_sha256"] == (
+        sha256(first_response.content).hexdigest()
+    )
+
+    first_download_response = client.get(
+        (
+            f"/contracts/{contract_data['id']}"
+            "/versions/1/download"
+        )
+    )
+    assert first_download_response.status_code == 200
+    assert (
+        first_download_response.content
+        == first_response.content
+    )
+
+    latest_download_response = client.get(
+        f"/contracts/{contract_data['id']}/download"
+    )
+    assert latest_download_response.status_code == 200
+    assert (
+        latest_download_response.content
+        == second_response.content
+    )
 
     events_response = client.get(
         f"/contracts/{contract_data['id']}/events"
@@ -531,11 +618,11 @@ def test_repeated_generation_replaces_previous_file(
     ]
     assert len(generated_events) == 2
     assert generated_events[0]["event_data"][
-        "replaced_previous_file"
-    ] is True
+        "version_number"
+    ] == 2
 
 
-def test_contract_update_removes_generated_file(
+def test_contract_update_preserves_generated_version(
     client: TestClient,
     db_session: Session,
     storage_root: Path,
@@ -580,16 +667,42 @@ def test_contract_update_removes_generated_file(
     assert update_response.status_code == 200
     assert update_response.json()[
         "generated_file_name"
-    ] is None
+    ] == "Договор № Д-101_26.docx"
     assert update_response.json()[
         "generated_storage_path"
-    ] is None
-    assert not generated_path.exists()
+    ] == str(generated_path)
+    assert generated_path.is_file()
 
     download_response = client.get(
         f"/contracts/{contract_data['id']}/download"
     )
-    assert download_response.status_code == 404
+    assert download_response.status_code == 200
+    assert (
+        download_response.content
+        == generate_response.content
+    )
+
+    second_generate_response = client.post(
+        f"/contracts/{contract_data['id']}/generate"
+    )
+    assert second_generate_response.status_code == 200
+
+    versions_response = client.get(
+        f"/contracts/{contract_data['id']}/versions"
+    )
+    assert versions_response.status_code == 200
+    versions = versions_response.json()
+
+    assert [
+        version["version_number"]
+        for version in versions
+    ] == [2, 1]
+    assert versions[0]["source_data"]["contract"][
+        "title"
+    ] == "Изменённый договор"
+    assert versions[1]["source_data"]["contract"][
+        "title"
+    ] == "Договор поставки"
 
 
 def test_download_rejects_path_outside_contract_storage(
@@ -598,25 +711,41 @@ def test_download_rejects_path_outside_contract_storage(
     storage_root: Path,
 ) -> None:
     counterparty = create_counterparty(client)
+    update_organization_profile(client)
+    template_path = storage_root / "source.docx"
+    create_template_file(template_path)
+    template = upload_template(
+        client,
+        template_path,
+    )
     contract_data = create_contract(
         client,
         counterparty["id"],
-        template_id=None,
+        template_id=template["id"],
+        form_data=contract_form_data(),
     )
+    generate_response = client.post(
+        f"/contracts/{contract_data['id']}/generate"
+    )
+    assert generate_response.status_code == 200
+
     outside_path = storage_root / "outside.docx"
     Document().save(outside_path)
 
-    contract = db_session.get(
-        Contract,
-        contract_data["id"],
-    )
-    assert contract is not None
-    contract.generated_file_name = "outside.docx"
-    contract.generated_storage_path = str(outside_path)
+    version = db_session.query(
+        ContractDocumentVersion
+    ).filter_by(
+        contract_id=contract_data["id"],
+        version_number=1,
+    ).one()
+    version.storage_path = str(outside_path)
     db_session.commit()
 
     response = client.get(
-        f"/contracts/{contract_data['id']}/download"
+        (
+            f"/contracts/{contract_data['id']}"
+            "/versions/1/download"
+        )
     )
 
     assert response.status_code == 404
@@ -624,4 +753,24 @@ def test_download_rejects_path_outside_contract_storage(
         "detail": (
             "Сгенерированный DOCX-файл не найден"
         ),
+    }
+
+
+def test_missing_contract_document_version_returns_not_found(
+    client: TestClient,
+) -> None:
+    counterparty = create_counterparty(client)
+    contract = create_contract(
+        client,
+        counterparty["id"],
+        template_id=None,
+    )
+
+    response = client.get(
+        f"/contracts/{contract['id']}/versions/1/download"
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Версия документа договора не найдена",
     }

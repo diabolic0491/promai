@@ -309,17 +309,10 @@ def update_contract(
     ):
         raise InvalidContractDatesError
 
-    previous_generated_storage_path = (
-        contract.generated_storage_path
-    )
-
     for field_name, value in update_data.items():
         setattr(contract, field_name, value)
 
     if changed_fields:
-        contract.generated_file_name = None
-        contract.generated_storage_path = None
-
         add_contract_event(
             session=session,
             contract_id=contract.id,
@@ -334,11 +327,6 @@ def update_contract(
 
     session.commit()
     session.refresh(contract)
-
-    if changed_fields:
-        contract_documents.remove_generated_file(
-            previous_generated_storage_path
-        )
 
     return contract
 
