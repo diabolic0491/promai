@@ -13,6 +13,10 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
+from app.api.dependencies.auth import (
+    AdminUser,
+    get_current_active_user,
+)
 from app.models.document_template import (
     DocumentTemplate,
     DocumentTemplateType,
@@ -27,6 +31,9 @@ from app.services import document_templates as service
 router = APIRouter(
     prefix="/document-templates",
     tags=["Document templates"],
+    dependencies=[
+        Depends(get_current_active_user),
+    ],
 )
 
 DatabaseSession = Annotated[
@@ -41,6 +48,7 @@ DatabaseSession = Annotated[
     status_code=status.HTTP_201_CREATED,
 )
 def create_document_template(
+    _: AdminUser,
     session: DatabaseSession,
     name: Annotated[
         str,
@@ -150,6 +158,7 @@ def get_document_template(
 def update_document_template(
     template_id: int,
     payload: DocumentTemplateUpdate,
+    _: AdminUser,
     session: DatabaseSession,
 ) -> DocumentTemplate:
     try:
@@ -184,6 +193,7 @@ def update_document_template(
 )
 def archive_document_template(
     template_id: int,
+    _: AdminUser,
     session: DatabaseSession,
 ) -> DocumentTemplate:
     try:
@@ -209,6 +219,7 @@ def archive_document_template(
 )
 def restore_document_template(
     template_id: int,
+    _: AdminUser,
     session: DatabaseSession,
 ) -> DocumentTemplate:
     try:

@@ -23,6 +23,8 @@ from app.models.technical_specification import (
     TechnicalSpecification,
     TechnicalSpecificationStatus,
 )
+from app.models.refresh_session import RefreshSession
+from app.models.user import User, UserRole
 
 
 __all__ = [
@@ -38,4 +40,7 @@ __all__ = [
     "DocumentTemplateType",
     "TechnicalSpecification",
     "TechnicalSpecificationStatus",
+    "RefreshSession",
+    "User",
+    "UserRole",
 ]

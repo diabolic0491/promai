@@ -11,6 +11,9 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
+from app.api.dependencies.auth import (
+    get_current_active_user,
+)
 from app.models.technical_specification import (
     TechnicalSpecification,
     TechnicalSpecificationStatus,
@@ -26,6 +29,9 @@ from app.services import technical_specifications as service
 router = APIRouter(
     prefix="/technical-specifications",
     tags=["Technical specifications"],
+    dependencies=[
+        Depends(get_current_active_user),
+    ],
 )
 
 DatabaseSession = Annotated[

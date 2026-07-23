@@ -63,11 +63,13 @@ def add_contract_event(
     contract_id: int,
     event_type: ContractEventType,
     event_data: dict[str, Any] | None = None,
+    actor_user_id: int | None = None,
 ) -> ContractEvent:
     event = ContractEvent(
         contract_id=contract_id,
         event_type=event_type.value,
         event_data=event_data,
+        actor_user_id=actor_user_id,
     )
 
     session.add(event)
@@ -77,6 +79,8 @@ def add_contract_event(
 def create_contract(
     session: Session,
     payload: ContractCreate,
+    *,
+    actor_user_id: int,
 ) -> Contract:
     counterparty = session.get(
         Counterparty,
@@ -119,6 +123,7 @@ def create_contract(
         contract_id=contract.id,
         from_status=None,
         to_status=ContractStatus.DRAFT.value,
+        changed_by_user_id=actor_user_id,
     )
 
     session.add(history_entry)
@@ -131,6 +136,7 @@ def create_contract(
                 ContractStatus.DRAFT.value
             ),
         },
+        actor_user_id=actor_user_id,
     )
     session.commit()
     session.refresh(contract)
@@ -245,6 +251,8 @@ def update_contract(
     session: Session,
     contract_id: int,
     payload: ContractUpdate,
+    *,
+    actor_user_id: int,
 ) -> Contract:
     contract = get_contract_by_id(
         session=session,
@@ -313,14 +321,15 @@ def update_contract(
         contract.generated_storage_path = None
 
         add_contract_event(
-        session=session,
-        contract_id=contract.id,
-        event_type=ContractEventType.UPDATED,
-        event_data={
-            "changed_fields": sorted(
-                 changed_fields
-         ),
-         },
+            session=session,
+            contract_id=contract.id,
+            event_type=ContractEventType.UPDATED,
+            event_data={
+                "changed_fields": sorted(
+                    changed_fields
+                ),
+            },
+            actor_user_id=actor_user_id,
         )
 
     session.commit()
@@ -337,6 +346,8 @@ def update_contract(
 def archive_contract(
     session: Session,
     contract_id: int,
+    *,
+    actor_user_id: int,
 ) -> Contract:
     contract = get_contract_by_id(
         session=session,
@@ -359,6 +370,7 @@ def archive_contract(
             ),
             "status": contract.status,
         },
+        actor_user_id=actor_user_id,
     )
 
     session.commit()
@@ -370,6 +382,8 @@ def archive_contract(
 def restore_contract(
     session: Session,
     contract_id: int,
+    *,
+    actor_user_id: int,
 ) -> Contract:
     contract = get_contract_by_id(
         session=session,
@@ -392,6 +406,7 @@ def restore_contract(
             ),
             "status": contract.status,
         },
+        actor_user_id=actor_user_id,
     )
 
     session.commit()
@@ -440,6 +455,8 @@ def change_contract_status(
     session: Session,
     contract_id: int,
     target_status: ContractStatus,
+    *,
+    actor_user_id: int,
 ) -> Contract:
     contract = get_contract_by_id(
         session=session,
@@ -475,6 +492,7 @@ def change_contract_status(
         contract_id=contract.id,
         from_status=previous_status.value,
         to_status=target_status.value,
+        changed_by_user_id=actor_user_id,
     )
 
     session.add(history_entry)
@@ -488,6 +506,7 @@ def change_contract_status(
             "from_status": previous_status.value,
             "to_status": target_status.value,
         },
+        actor_user_id=actor_user_id,
     )
     session.commit()
     session.refresh(contract)

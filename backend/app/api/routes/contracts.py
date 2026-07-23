@@ -11,6 +11,10 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
+from app.api.dependencies.auth import (
+    CurrentUser,
+    get_current_active_user,
+)
 from app.models.contract import Contract
 from app.models.contract_event import ContractEvent
 from app.models.contract_status_history import (
@@ -32,6 +36,9 @@ from app.services import contract_documents
 router = APIRouter(
     prefix="/contracts",
     tags=["Contracts"],
+    dependencies=[
+        Depends(get_current_active_user),
+    ],
 )
 
 DatabaseSession = Annotated[
@@ -190,12 +197,14 @@ def create_contract_docx_file_response(
 )
 def create_contract(
     payload: ContractCreate,
+    current_user: CurrentUser,
     session: DatabaseSession,
 ) -> Contract:
     try:
         return service.create_contract(
             session=session,
             payload=payload,
+            actor_user_id=current_user.id,
         )
     except service.ContractCounterpartyNotFoundError:
         raise HTTPException(
@@ -297,6 +306,7 @@ def get_contract_events(
 )
 def generate_contract_docx(
     contract_id: int,
+    current_user: CurrentUser,
     session: DatabaseSession,
 ) -> FileResponse:
     try:
@@ -304,6 +314,7 @@ def generate_contract_docx(
             contract_documents.generate_contract_docx(
                 session=session,
                 contract_id=contract_id,
+                actor_user_id=current_user.id,
             )
         )
     except Exception as error:
@@ -364,6 +375,7 @@ def get_contract(
 def update_contract(
     contract_id: int,
     payload: ContractUpdate,
+    current_user: CurrentUser,
     session: DatabaseSession,
 ) -> Contract:
     try:
@@ -371,6 +383,7 @@ def update_contract(
             session=session,
             contract_id=contract_id,
             payload=payload,
+            actor_user_id=current_user.id,
         )
     except service.ContractNotFoundError:
         raise HTTPException(
@@ -424,6 +437,7 @@ def update_contract(
 def update_contract_status(
     contract_id: int,
     payload: ContractStatusUpdate,
+    current_user: CurrentUser,
     session: DatabaseSession,
 ) -> Contract:
     try:
@@ -431,6 +445,7 @@ def update_contract_status(
             session=session,
             contract_id=contract_id,
             target_status=payload.status,
+            actor_user_id=current_user.id,
         )
     except service.ContractNotFoundError:
         raise HTTPException(
@@ -459,12 +474,14 @@ def update_contract_status(
 )
 def archive_contract(
     contract_id: int,
+    current_user: CurrentUser,
     session: DatabaseSession,
 ) -> Contract:
     try:
         return service.archive_contract(
             session=session,
             contract_id=contract_id,
+            actor_user_id=current_user.id,
         )
     except service.ContractNotFoundError:
         raise HTTPException(
@@ -484,12 +501,14 @@ def archive_contract(
 )
 def restore_contract(
     contract_id: int,
+    current_user: CurrentUser,
     session: DatabaseSession,
 ) -> Contract:
     try:
         return service.restore_contract(
             session=session,
             contract_id=contract_id,
+            actor_user_id=current_user.id,
         )
     except service.ContractNotFoundError:
         raise HTTPException(

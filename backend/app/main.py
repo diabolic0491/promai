@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.contracts import router as contracts_router
+from app.api.routes.auth import router as auth_router
 from app.api.routes.counterparties import router as counterparties_router
 from app.api.routes.document_templates import (
     router as document_templates_router,
@@ -11,6 +12,7 @@ from app.api.routes.organization_profile import (
     router as organization_profile_router,
 )
 from app.core.config import get_settings
+from app.api.routes.users import router as users_router
 
 from app.api.routes.technical_specifications import (
     router as technical_specifications_router,
@@ -37,6 +39,8 @@ app.add_middleware(
 )
 
 app.include_router(health_router)
+app.include_router(auth_router)
+app.include_router(users_router)
 app.include_router(counterparties_router)
 app.include_router(contracts_router)
 app.include_router(organization_profile_router)

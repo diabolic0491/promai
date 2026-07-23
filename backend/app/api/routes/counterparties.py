@@ -10,6 +10,9 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
+from app.api.dependencies.auth import (
+    get_current_active_user,
+)
 from app.models.counterparty import Counterparty
 from app.schemas.counterparty import (
     CounterpartyCreate,
@@ -22,6 +25,9 @@ from app.services import counterparties as service
 router = APIRouter(
     prefix="/counterparties",
     tags=["Counterparties"],
+    dependencies=[
+        Depends(get_current_active_user),
+    ],
 )
 
 DatabaseSession = Annotated[
