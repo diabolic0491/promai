@@ -22,6 +22,7 @@ class DocumentTemplateType(StrEnum):
     TECHNICAL_SPECIFICATION = (
         "technical_specification"
     )
+    CONTRACT = "contract"
 
 
 class DocumentTemplate(Base):

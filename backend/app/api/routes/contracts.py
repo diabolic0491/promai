@@ -7,6 +7,7 @@ from fastapi import (
     Query,
     status,
 )
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
@@ -25,6 +26,7 @@ from app.schemas.contract import (
     ContractUpdate,
 )
 from app.services import contracts as service
+from app.services import contract_documents
 
 
 router = APIRouter(
@@ -36,6 +38,149 @@ DatabaseSession = Annotated[
     Session,
     Depends(get_db_session),
 ]
+
+
+def raise_contract_document_service_error(
+    error: Exception,
+) -> None:
+    if isinstance(
+        error,
+        contract_documents.ContractDocumentNotFoundError,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Договор не найден",
+        )
+
+    if isinstance(
+        error,
+        contract_documents.ContractTemplateNotFoundError,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Шаблон документа не найден",
+        )
+
+    if isinstance(
+        error,
+        contract_documents.ContractDocumentCounterpartyNotFoundError,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Контрагент не найден",
+        )
+
+    if isinstance(
+        error,
+        contract_documents.ContractTemplateNotSelectedError,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Для договора не выбран шаблон",
+        )
+
+    if isinstance(
+        error,
+        contract_documents.InvalidContractTemplateTypeError,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Выбранный шаблон не предназначен "
+                "для договоров"
+            ),
+        )
+
+    if isinstance(
+        error,
+        contract_documents.InactiveContractTemplateError,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Шаблон выключен или находится "
+                "в архиве"
+            ),
+        )
+
+    if isinstance(
+        error,
+        contract_documents.ArchivedContractGenerationError,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Архивный договор сначала "
+                "необходимо восстановить"
+            ),
+        )
+
+    if isinstance(
+        error,
+        contract_documents.ContractTemplateFileNotFoundError,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Файл шаблона отсутствует "
+                "в хранилище"
+            ),
+        )
+
+    if isinstance(
+        error,
+        contract_documents.MissingContractTemplateVariablesError,
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_ENTITY
+            ),
+            detail={
+                "message": (
+                    "Не заполнены обязательные "
+                    "переменные шаблона"
+                ),
+                "missing_variables": (
+                    error.variable_names
+                ),
+            },
+        )
+
+    if isinstance(
+        error,
+        contract_documents.InvalidContractDocxTemplateError,
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_ENTITY
+            ),
+            detail=(
+                "Не удалось обработать DOCX-шаблон"
+            ),
+        )
+
+    if isinstance(
+        error,
+        contract_documents.GeneratedContractFileNotFoundError,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                "Сгенерированный DOCX-файл не найден"
+            ),
+        )
+
+    raise error
+
+
+def create_contract_docx_file_response(
+    generated_file: contract_documents.GeneratedContractFile,
+) -> FileResponse:
+    return FileResponse(
+        path=generated_file.path,
+        media_type=contract_documents.DOCX_MEDIA_TYPE,
+        filename=generated_file.file_name,
+    )
 
 
 @router.post(
@@ -52,6 +197,11 @@ def create_contract(
             session=session,
             payload=payload,
         )
+    except service.ContractCounterpartyNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Контрагент не найден",
+        )
     except service.ArchivedContractCounterpartyError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -60,6 +210,8 @@ def create_contract(
                 "с архивным контрагентом"
             ),
         )
+    except Exception as error:
+        raise_contract_document_service_error(error)
 
 
 @router.get(
@@ -137,7 +289,54 @@ def get_contract_events(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Договор не найден",
         )
-    
+
+
+@router.post(
+    "/{contract_id}/generate",
+    response_class=FileResponse,
+)
+def generate_contract_docx(
+    contract_id: int,
+    session: DatabaseSession,
+) -> FileResponse:
+    try:
+        generated_file = (
+            contract_documents.generate_contract_docx(
+                session=session,
+                contract_id=contract_id,
+            )
+        )
+    except Exception as error:
+        raise_contract_document_service_error(error)
+
+    return create_contract_docx_file_response(
+        generated_file
+    )
+
+
+@router.get(
+    "/{contract_id}/download",
+    response_class=FileResponse,
+)
+def download_contract_docx(
+    contract_id: int,
+    session: DatabaseSession,
+) -> FileResponse:
+    try:
+        generated_file = (
+            contract_documents.get_generated_contract_docx(
+                session=session,
+                contract_id=contract_id,
+            )
+        )
+    except Exception as error:
+        raise_contract_document_service_error(error)
+
+    return create_contract_docx_file_response(
+        generated_file
+    )
+
+
 @router.get(
     "/{contract_id}",
     response_model=ContractRead,
@@ -204,6 +403,18 @@ def update_contract(
                 "даты начала"
             ),
         )
+    except service.InvalidContractFormDataError:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_ENTITY
+            ),
+            detail=(
+                "Дополнительные данные договора "
+                "нельзя очистить"
+            ),
+        )
+    except Exception as error:
+        raise_contract_document_service_error(error)
 
 
 @router.patch(

@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     Date,
@@ -11,6 +11,7 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import (
     Mapped,
     mapped_column,
@@ -29,6 +30,9 @@ if TYPE_CHECKING:
         ContractStatusHistory,
     )
     from app.models.counterparty import Counterparty
+    from app.models.document_template import (
+        DocumentTemplate,
+    )
     from app.models.contract_event import (
         ContractEvent,
     )
@@ -48,6 +52,15 @@ class Contract(Base):
             ondelete="RESTRICT",
         ),
         nullable=False,
+        index=True,
+    )
+
+    template_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "document_templates.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
         index=True,
     )
 
@@ -121,6 +134,29 @@ class Contract(Base):
         server_default=ContractPartyRole.BUYER.value,
     )
 
+    form_data: Mapped[
+        dict[str, Any]
+    ] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    generated_file_name: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    generated_storage_path: Mapped[
+        str | None
+    ] = mapped_column(
+        String(1000),
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -137,6 +173,10 @@ class Contract(Base):
     counterparty: Mapped["Counterparty"] = relationship(
         back_populates="contracts",
     )
+
+    template: Mapped[
+        "DocumentTemplate | None"
+    ] = relationship()
 
     status_history: Mapped[
         list["ContractStatusHistory"]

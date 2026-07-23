@@ -14,6 +14,7 @@ from app.schemas.contract import (
     ContractCreate,
     ContractUpdate,
 )
+from app.services import contract_documents
 
 from app.models.contract_event import (
     ContractEvent,
@@ -36,6 +37,10 @@ class EmptyContractUpdateError(Exception):
     """Не передано ни одного поля для изменения."""
 
 
+class ContractAlreadyArchivedError(Exception):
+    """Договор уже находится в архиве."""
+
+
 class ContractNotArchivedError(Exception):
     """Договор не находится в архиве."""
 
@@ -47,6 +52,10 @@ class ArchivedContractModificationError(Exception):
 
 class InvalidContractDatesError(Exception):
     """Некорректный период действия договора."""
+
+
+class InvalidContractFormDataError(Exception):
+    """Дополнительные данные договора нельзя очистить."""
 
 
 def add_contract_event(
@@ -80,8 +89,15 @@ def create_contract(
     if counterparty.status == "archived":
         raise ArchivedContractCounterpartyError
 
+    if payload.template_id is not None:
+        contract_documents.get_template_for_contract(
+            session=session,
+            template_id=payload.template_id,
+        )
+
     contract = Contract(
         counterparty_id=payload.counterparty_id,
+        template_id=payload.template_id,
         number=payload.number,
         title=payload.title,
         contract_date=payload.contract_date,
@@ -92,6 +108,7 @@ def create_contract(
         notes=payload.notes,
         owner_role=payload.owner_role.value,
         counterparty_role=payload.counterparty_role.value,
+        form_data=payload.form_data,
         status=ContractStatus.DRAFT.value,
     )
 
@@ -130,6 +147,11 @@ def list_contracts(
     offset: int = 0,
 ) -> list[Contract]:
     statement = select(Contract)
+
+    if counterparty_id is not None:
+        statement = statement.where(
+            Contract.counterparty_id == counterparty_id
+        )
 
     if status is not None:
         statement = statement.where(
@@ -239,6 +261,23 @@ def update_contract(
     if not update_data:
         raise EmptyContractUpdateError
 
+    if (
+        "form_data" in update_data
+        and update_data["form_data"] is None
+    ):
+        raise InvalidContractFormDataError
+
+    prospective_template_id = update_data.get(
+        "template_id",
+        contract.template_id,
+    )
+
+    if prospective_template_id is not None:
+        contract_documents.get_template_for_contract(
+            session=session,
+            template_id=prospective_template_id,
+        )
+
     prospective_start_date = update_data.get(
         "start_date",
         contract.start_date,
@@ -262,10 +301,17 @@ def update_contract(
     ):
         raise InvalidContractDatesError
 
+    previous_generated_storage_path = (
+        contract.generated_storage_path
+    )
+
     for field_name, value in update_data.items():
         setattr(contract, field_name, value)
-    
+
     if changed_fields:
+        contract.generated_file_name = None
+        contract.generated_storage_path = None
+
         add_contract_event(
         session=session,
         contract_id=contract.id,
@@ -279,6 +325,11 @@ def update_contract(
 
     session.commit()
     session.refresh(contract)
+
+    if changed_fields:
+        contract_documents.remove_generated_file(
+            previous_generated_storage_path
+        )
 
     return contract
 

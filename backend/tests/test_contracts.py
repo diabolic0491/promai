@@ -227,6 +227,31 @@ def test_archive_preserves_lifecycle_status(
     assert archived_contract["is_archived"] is True
 
 
+def test_repeated_archive_returns_conflict(
+    client: TestClient,
+) -> None:
+    counterparty = create_counterparty(client)
+    contract = create_contract(
+        client,
+        counterparty["id"],
+    )
+
+    first_response = client.post(
+        f"/contracts/{contract['id']}/archive"
+    )
+
+    assert first_response.status_code == 200
+
+    second_response = client.post(
+        f"/contracts/{contract['id']}/archive"
+    )
+
+    assert second_response.status_code == 409
+    assert second_response.json() == {
+        "detail": "Договор уже находится в архиве",
+    }
+
+
 def test_archived_contract_cannot_be_edited(
     client: TestClient,
 ) -> None:
@@ -355,6 +380,53 @@ def test_archived_contract_hidden_from_default_list(
     assert contract["id"] in all_ids
 
 
+def test_contracts_can_be_filtered_by_counterparty(
+    client: TestClient,
+) -> None:
+    first_counterparty = create_counterparty(
+        client,
+        unp="900000001",
+    )
+    second_counterparty = create_counterparty(
+        client,
+        unp="900000002",
+    )
+
+    first_contract = create_contract(
+        client,
+        first_counterparty["id"],
+        number="FILTER-001",
+    )
+    second_contract = create_contract(
+        client,
+        second_counterparty["id"],
+        number="FILTER-002",
+    )
+
+    response = client.get(
+        "/contracts",
+        params={
+            "counterparty_id": first_counterparty["id"],
+        },
+    )
+
+    assert response.status_code == 200
+
+    contracts = response.json()
+    contract_ids = {
+        contract["id"]
+        for contract in contracts
+    }
+
+    assert first_contract["id"] in contract_ids
+    assert second_contract["id"] not in contract_ids
+    assert all(
+        contract["counterparty_id"]
+        == first_counterparty["id"]
+        for contract in contracts
+    )
+
+
 def test_contract_cannot_be_created_for_archived_counterparty(
     client: TestClient,
 ) -> None:
@@ -382,6 +454,28 @@ def test_contract_cannot_be_created_for_archived_counterparty(
     )
 
     assert response.status_code == 409
+
+
+def test_contract_cannot_be_created_for_missing_counterparty(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/contracts",
+        json={
+            "counterparty_id": 999999999,
+            "number": "MISSING-CP-001",
+            "title": "Договор без контрагента",
+            "contract_date": "2026-07-21",
+            "currency": "BYN",
+            "owner_role": "supplier",
+            "counterparty_role": "buyer",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "Контрагент не найден",
+    }
 
 
 def test_missing_contract_returns_not_found(

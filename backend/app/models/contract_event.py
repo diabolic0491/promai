@@ -28,6 +28,7 @@ class ContractEventType(StrEnum):
     STATUS_CHANGED = "status_changed"
     ARCHIVED = "archived"
     RESTORED = "restored"
+    GENERATED = "generated"
 
 
 class ContractEvent(Base):

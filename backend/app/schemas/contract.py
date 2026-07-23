@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 
 from pydantic import (
     BaseModel,
@@ -48,6 +49,11 @@ class ContractEventRead(BaseModel):
 class ContractCreate(BaseModel):
     counterparty_id: int = Field(gt=0)
 
+    template_id: int | None = Field(
+        default=None,
+        gt=0,
+    )
+
     number: str = Field(
         min_length=1,
         max_length=100,
@@ -84,6 +90,10 @@ class ContractCreate(BaseModel):
 
     counterparty_role: ContractPartyRole = (
         ContractPartyRole.BUYER
+    )
+
+    form_data: dict[str, Any] = Field(
+        default_factory=dict,
     )
 
     @field_validator("number", "title")
@@ -145,6 +155,11 @@ class ContractCreate(BaseModel):
 
 
 class ContractUpdate(BaseModel):
+    template_id: int | None = Field(
+        default=None,
+        gt=0,
+    )
+
     number: str | None = Field(
         default=None,
         min_length=1,
@@ -178,6 +193,8 @@ class ContractUpdate(BaseModel):
 
     owner_role: ContractPartyRole | None = None
     counterparty_role: ContractPartyRole | None = None
+
+    form_data: dict[str, Any] | None = None
 
     @field_validator("number", "title")
     @classmethod
@@ -250,6 +267,7 @@ class ContractRead(BaseModel):
 
     id: int
     counterparty_id: int
+    template_id: int | None
 
     number: str
     title: str
@@ -267,6 +285,11 @@ class ContractRead(BaseModel):
 
     owner_role: ContractPartyRole
     counterparty_role: ContractPartyRole
+
+    form_data: dict[str, Any]
+
+    generated_file_name: str | None
+    generated_storage_path: str | None
 
     created_at: datetime
     updated_at: datetime
