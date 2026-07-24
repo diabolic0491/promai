@@ -11,6 +11,11 @@ FINDINGS_RESULT_IDENTIFIER_DOMAIN = (
     "promai:contract-analysis-findings-result:v1"
 )
 MACHINE_DRAFT_STATUS = "machine_draft"
+MAX_POLICY_ID_LENGTH = 255
+MAX_POLICY_VERSION_LENGTH = 100
+MAX_POLICY_VALUE_LENGTH = 100
+MAX_FINDING_TITLE_LENGTH = 500
+MAX_FINDING_DESCRIPTION_LENGTH = 20_000
 
 
 @dataclass(frozen=True)
@@ -116,6 +121,17 @@ def is_non_empty_canonical_text(
     )
 
 
+def is_bounded_canonical_text(
+    value: object,
+    *,
+    max_length: int,
+) -> bool:
+    return (
+        is_non_empty_canonical_text(value)
+        and len(value) <= max_length
+    )
+
+
 def canonical_payload_sha256(
     payload: object,
 ) -> str:
@@ -151,8 +167,12 @@ def validate_policy_values(
     return (
         type(values) is tuple
         and bool(values)
+        and len(values) <= 100
         and all(
-            is_non_empty_canonical_text(value)
+            is_bounded_canonical_text(
+                value,
+                max_length=MAX_POLICY_VALUE_LENGTH,
+            )
             for value in values
         )
         and len(values) == len(set(values))
@@ -165,11 +185,13 @@ def build_contract_analysis_policy_sha256(
     if (
         type(policy)
         is not ContractAnalysisFindingsPolicy
-        or not is_non_empty_canonical_text(
-            policy.policy_id
+        or not is_bounded_canonical_text(
+            policy.policy_id,
+            max_length=MAX_POLICY_ID_LENGTH,
         )
-        or not is_non_empty_canonical_text(
-            policy.policy_version
+        or not is_bounded_canonical_text(
+            policy.policy_version,
+            max_length=MAX_POLICY_VERSION_LENGTH,
         )
         or not validate_policy_values(
             policy.allowed_categories
@@ -206,17 +228,23 @@ def validate_finding_draft(
     if (
         type(draft)
         is not ContractAnalysisFindingDraft
-        or not is_non_empty_canonical_text(
-            draft.category
+        or not is_bounded_canonical_text(
+            draft.category,
+            max_length=MAX_POLICY_VALUE_LENGTH,
         )
-        or not is_non_empty_canonical_text(
-            draft.severity_level
+        or not is_bounded_canonical_text(
+            draft.severity_level,
+            max_length=MAX_POLICY_VALUE_LENGTH,
         )
-        or not is_non_empty_canonical_text(
-            draft.title
+        or not is_bounded_canonical_text(
+            draft.title,
+            max_length=MAX_FINDING_TITLE_LENGTH,
         )
-        or not is_non_empty_canonical_text(
-            draft.description
+        or not is_bounded_canonical_text(
+            draft.description,
+            max_length=(
+                MAX_FINDING_DESCRIPTION_LENGTH
+            ),
         )
         or type(draft.evidence_references)
         is not tuple
@@ -506,7 +534,7 @@ def build_contract_analysis_findings_machine_draft(
         )
     )
 
-    if type(findings) is not tuple or not findings:
+    if type(findings) is not tuple:
         raise InvalidContractAnalysisFindingsDraftError
 
     verified_findings: list[

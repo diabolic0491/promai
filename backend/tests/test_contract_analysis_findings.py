@@ -495,7 +495,6 @@ def test_rejects_malformed_structured_finding(
 @pytest.mark.parametrize(
     "findings",
     [
-        (),
         [],
         ("not-a-structured-finding",),
     ],
@@ -517,6 +516,28 @@ def test_rejects_invalid_findings_collection(
                 findings=findings,
             )
         )
+
+
+def test_empty_findings_builds_machine_draft(
+) -> None:
+    evidence_index = build_evidence_index()
+
+    result = (
+        contract_analysis_findings
+        .build_contract_analysis_findings_machine_draft(
+            evidence_index,
+            policy=build_policy(),
+            findings=(),
+        )
+    )
+
+    assert result.status == "machine_draft"
+    assert result.requires_human_review is True
+    assert result.findings == ()
+    assert result.result_id.startswith(
+        "contract-findings-result-v1-"
+    )
+    assert len(result.content_sha256) == 64
 
 
 def test_rejects_unsupported_category() -> None:

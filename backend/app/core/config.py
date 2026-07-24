@@ -28,6 +28,17 @@ class Settings(BaseSettings):
         le=90,
     )
 
+    contract_analysis_enabled: bool = False
+    contract_analysis_api_base_url: str | None = None
+    contract_analysis_model: str | None = None
+    contract_analysis_api_key: SecretStr | None = None
+    contract_analysis_timeout_seconds: float = Field(
+        default=60.0,
+        gt=0,
+        le=600,
+    )
+    contract_analysis_policy_path: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

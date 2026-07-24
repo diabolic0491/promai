@@ -3,6 +3,12 @@ from app.schemas.contract import (
     ContractRead,
     ContractUpdate,
 )
+from app.schemas.contract_analysis import (
+    ContractAnalysisEvidenceReferenceRead,
+    ContractAnalysisFindingRead,
+    ContractAnalysisRunRead,
+    ContractAnalysisRunSummaryRead,
+)
 from app.schemas.counterparty import (
     CounterpartyCreate,
     CounterpartyRead,
@@ -10,6 +16,10 @@ from app.schemas.counterparty import (
 )
 
 __all__ = [
+    "ContractAnalysisEvidenceReferenceRead",
+    "ContractAnalysisFindingRead",
+    "ContractAnalysisRunRead",
+    "ContractAnalysisRunSummaryRead",
     "ContractCreate",
     "ContractRead",
     "ContractUpdate",
