@@ -13,11 +13,12 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.db.session import get_db_session
 from app.api.dependencies.auth import (
     CurrentUser,
     get_current_active_user,
 )
+from app.core.config import Settings, get_settings
+from app.db.session import get_db_session
 from app.models.contract import Contract
 from app.models.contract_document_version import (
     ContractDocumentVersion,
@@ -36,9 +37,16 @@ from app.schemas.contract import (
     ContractStatusUpdate,
     ContractUpdate,
 )
+from app.schemas.contract_analysis import (
+    ContractAnalysisRunRead,
+    ContractAnalysisRunSummaryRead,
+)
+from app.services import (
+    contract_analysis_executor,
+    contract_analysis_runs,
+    contract_documents,
+)
 from app.services import contracts as service
-from app.services import contract_documents
-
 
 router = APIRouter(
     prefix="/contracts",
@@ -51,6 +59,57 @@ router = APIRouter(
 DatabaseSession = Annotated[
     Session,
     Depends(get_db_session),
+]
+
+
+def provide_contract_analysis_execution_context(
+    settings: Annotated[
+        Settings,
+        Depends(get_settings),
+    ],
+) -> (
+    contract_analysis_executor
+    .ContractAnalysisExecutionContext
+):
+    try:
+        return (
+            contract_analysis_executor
+            .get_contract_analysis_execution_context(
+                settings
+            )
+        )
+    except (
+        contract_analysis_executor
+        .ContractAnalysisDisabledError
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_503_SERVICE_UNAVAILABLE
+            ),
+            detail="Анализ договоров выключен",
+        )
+    except (
+        contract_analysis_executor
+        .ContractAnalysisConfigurationError
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_503_SERVICE_UNAVAILABLE
+            ),
+            detail=(
+                "Анализ договоров не настроен"
+            ),
+        )
+
+
+AnalysisExecutionContext = Annotated[
+    (
+        contract_analysis_executor
+        .ContractAnalysisExecutionContext
+    ),
+    Depends(
+        provide_contract_analysis_execution_context
+    ),
 ]
 
 
@@ -229,6 +288,50 @@ def raise_contract_document_service_error(
         )
 
     raise error
+
+
+def raise_contract_analysis_service_error(
+    error: Exception,
+) -> None:
+    if isinstance(
+        error,
+        contract_analysis_runs
+        .ContractAnalysisRunNotFoundError,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Запуск анализа не найден",
+        )
+
+    if isinstance(
+        error,
+        contract_analysis_runs
+        .ContractAnalysisAlreadyRunningError,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Для этой версии уже выполняется "
+                "анализ"
+            ),
+        )
+
+    if isinstance(
+        error,
+        contract_analysis_runs
+        .ContractAnalysisExecutionFailedError,
+    ):
+        raise HTTPException(
+            status_code=error.http_status_code,
+            detail={
+                "message": error.public_message,
+                "analysis_id": error.analysis_id,
+                "status": "failed",
+                "error_code": error.code,
+            },
+        )
+
+    raise_contract_document_service_error(error)
 
 
 def create_contract_docx_file_response(
@@ -415,6 +518,108 @@ def download_contract_document_version(
     return create_contract_docx_file_response(
         generated_file
     )
+
+
+@router.post(
+    (
+        "/{contract_id}/versions/{version_number}"
+        "/analyses"
+    ),
+    response_model=ContractAnalysisRunRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_contract_analysis(
+    contract_id: int,
+    version_number: Annotated[int, Path(gt=0)],
+    current_user: CurrentUser,
+    session: DatabaseSession,
+    execution_context: AnalysisExecutionContext,
+):
+    try:
+        return (
+            contract_analysis_runs
+            .run_contract_analysis(
+                session=session,
+                contract_id=contract_id,
+                version_number=version_number,
+                actor_user_id=current_user.id,
+                execution_context=(
+                    execution_context
+                ),
+            )
+        )
+    except Exception as error:  # noqa: BLE001
+        raise_contract_analysis_service_error(
+            error
+        )
+
+
+@router.get(
+    (
+        "/{contract_id}/versions/{version_number}"
+        "/analyses"
+    ),
+    response_model=list[
+        ContractAnalysisRunSummaryRead
+    ],
+)
+def get_contract_analyses(
+    contract_id: int,
+    version_number: Annotated[int, Path(gt=0)],
+    session: DatabaseSession,
+    limit: Annotated[
+        int,
+        Query(ge=1, le=100),
+    ] = 20,
+    offset: Annotated[
+        int,
+        Query(ge=0),
+    ] = 0,
+):
+    try:
+        return (
+            contract_analysis_runs
+            .list_contract_analysis_runs(
+                session=session,
+                contract_id=contract_id,
+                version_number=version_number,
+                limit=limit,
+                offset=offset,
+            )
+        )
+    except Exception as error:  # noqa: BLE001
+        raise_contract_analysis_service_error(
+            error
+        )
+
+
+@router.get(
+    (
+        "/{contract_id}/versions/{version_number}"
+        "/analyses/{analysis_id}"
+    ),
+    response_model=ContractAnalysisRunRead,
+)
+def get_contract_analysis(
+    contract_id: int,
+    version_number: Annotated[int, Path(gt=0)],
+    analysis_id: Annotated[int, Path(gt=0)],
+    session: DatabaseSession,
+):
+    try:
+        return (
+            contract_analysis_runs
+            .get_contract_analysis_run(
+                session=session,
+                contract_id=contract_id,
+                version_number=version_number,
+                analysis_id=analysis_id,
+            )
+        )
+    except Exception as error:  # noqa: BLE001
+        raise_contract_analysis_service_error(
+            error
+        )
 
 
 @router.get(

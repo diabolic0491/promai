@@ -17,8 +17,10 @@ from sqlalchemy.orm import (
 
 from app.db.base import Base
 
-
 if TYPE_CHECKING:
+    from app.models.contract_analysis import (
+        ContractAnalysisRun,
+    )
     from app.models.contract_document_version import (
         ContractDocumentVersion,
     )
@@ -117,6 +119,15 @@ class User(Base):
         back_populates="created_by_user",
         foreign_keys=(
             "ContractDocumentVersion.created_by_user_id"
+        ),
+    )
+
+    contract_analysis_runs: Mapped[
+        list["ContractAnalysisRun"]
+    ] = relationship(
+        back_populates="created_by_user",
+        foreign_keys=(
+            "ContractAnalysisRun.created_by_user_id"
         ),
     )
 

@@ -21,9 +21,11 @@ from sqlalchemy.orm import (
 
 from app.db.base import Base
 
-
 if TYPE_CHECKING:
     from app.models.contract import Contract
+    from app.models.contract_analysis import (
+        ContractAnalysisRun,
+    )
     from app.models.document_template import (
         DocumentTemplate,
     )
@@ -213,4 +215,15 @@ class ContractDocumentVersion(Base):
         relationship(
             back_populates="contract_document_versions",
         )
+    )
+
+    analysis_runs: Mapped[
+        list["ContractAnalysisRun"]
+    ] = relationship(
+        back_populates="document_version",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by=(
+            "ContractAnalysisRun.started_at.desc()"
+        ),
     )

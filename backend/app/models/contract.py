@@ -24,20 +24,22 @@ from app.models.contract_party_role import (
     ContractStatus,
 )
 
-
 if TYPE_CHECKING:
+    from app.models.contract_analysis import (
+        ContractAnalysisRun,
+    )
+    from app.models.contract_document_version import (
+        ContractDocumentVersion,
+    )
+    from app.models.contract_event import (
+        ContractEvent,
+    )
     from app.models.contract_status_history import (
         ContractStatusHistory,
     )
     from app.models.counterparty import Counterparty
     from app.models.document_template import (
         DocumentTemplate,
-    )
-    from app.models.contract_event import (
-        ContractEvent,
-    )
-    from app.models.contract_document_version import (
-        ContractDocumentVersion,
     )
 
 
@@ -212,6 +214,17 @@ class Contract(Base):
         order_by=(
             "ContractDocumentVersion."
             "version_number.desc()"
+        ),
+    )
+
+    analysis_runs: Mapped[
+        list["ContractAnalysisRun"]
+    ] = relationship(
+        back_populates="contract",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by=(
+            "ContractAnalysisRun.started_at.desc()"
         ),
     )
 
