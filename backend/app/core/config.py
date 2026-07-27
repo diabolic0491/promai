@@ -37,6 +37,13 @@ class Settings(BaseSettings):
         gt=0,
         le=600,
     )
+    contract_analysis_batch_max_characters: int = (
+        Field(
+            default=6_000,
+            ge=1_000,
+            le=100_000,
+        )
+    )
     contract_analysis_policy_path: str | None = None
 
     model_config = SettingsConfigDict(

@@ -50,10 +50,36 @@ def build_contract_document() -> bytes:
     return stream.getvalue()
 
 
+def build_contract_document_with_deadline_conflict(
+) -> bytes:
+    stream = BytesIO()
+    document = Document()
+    document.add_paragraph("ДОГОВОР ПОСТАВКИ")
+    document.add_paragraph(
+        "Поставщик обязуется выполнить "
+        "предусмотренные настоящим Договором "
+        "работы после поставки товара в течение "
+        "5 рабочих дней после получения от "
+        "Покупателя письменного уведомления о "
+        "готовности к выполнению работ."
+    )
+    document.add_paragraph(
+        "Срок выполнения предусмотренных "
+        "настоящим Договором работ после поставки "
+        "товара — не более 10 календарных дней "
+        "после получения от Покупателя письменного "
+        "уведомления о готовности к выполнению "
+        "работ."
+    )
+    document.save(stream)
+    return stream.getvalue()
+
+
 def create_contract_with_version(
     client: TestClient,
     *,
     unp: str,
+    document_content: bytes | None = None,
 ) -> tuple[dict[str, object], dict[str, object]]:
     counterparty_response = client.post(
         "/counterparties",
@@ -86,7 +112,11 @@ def create_contract_with_version(
         files={
             "file": (
                 "Договор.docx",
-                build_contract_document(),
+                (
+                    document_content
+                    if document_content is not None
+                    else build_contract_document()
+                ),
                 DOCX_MEDIA_TYPE,
             ),
         },
@@ -105,6 +135,7 @@ def build_policy():
             allowed_categories=(
                 "payment",
                 "liability",
+                "delivery",
             ),
             allowed_severity_levels=(
                 "medium",
@@ -325,18 +356,32 @@ def test_analysis_is_saved_and_returned_by_api(
     )
 
     assert db_session.scalar(
-        select(func.count()).select_from(
-            ContractAnalysisRun
+        select(func.count())
+        .select_from(ContractAnalysisRun)
+        .where(
+            ContractAnalysisRun.contract_id
+            == contract["id"]
         )
     ) == 1
     assert db_session.scalar(
-        select(func.count()).select_from(
-            FindingModel
+        select(func.count())
+        .select_from(FindingModel)
+        .where(
+            FindingModel.analysis_run_id
+            == result["id"]
         )
     ) == 1
     assert db_session.scalar(
-        select(func.count()).select_from(
-            EvidenceModel
+        select(func.count())
+        .select_from(EvidenceModel)
+        .join(
+            FindingModel,
+            EvidenceModel.finding_id
+            == FindingModel.id,
+        )
+        .where(
+            FindingModel.analysis_run_id
+            == result["id"]
         )
     ) == 1
 
@@ -368,6 +413,155 @@ def test_empty_findings_are_completed(
     assert result["result_id"].startswith(
         "contract-findings-result-v1-"
     )
+
+
+def test_deadline_conflict_is_saved_when_executor_misses_it(
+    client: TestClient,
+    storage_root: Path,
+) -> None:
+    del storage_root
+    contract, _version = create_contract_with_version(
+        client,
+        unp="910000013",
+        document_content=(
+            build_contract_document_with_deadline_conflict()
+        ),
+    )
+    configure_executor({"findings": []})
+
+    response = client.post(
+        (
+            f"/contracts/{contract['id']}"
+            "/versions/1/analyses"
+        )
+    )
+
+    assert response.status_code == 201
+    result = response.json()
+    assert result["status"] == "completed"
+    assert len(result["findings"]) == 1
+    finding = result["findings"][0]
+    assert finding["category"] == "delivery"
+    assert finding["severity_level"] == "medium"
+    assert finding["title"] == (
+        "Несогласованность сроков выполнения работ"
+    )
+    assert len(
+        finding["evidence_references"]
+    ) == 2
+    assert (
+        "5 рабочих дней и 10 календарных дней"
+        in finding["description"]
+    )
+
+
+def test_semantically_unsupported_finding_is_not_saved(
+    client: TestClient,
+    db_session: Session,
+    storage_root: Path,
+) -> None:
+    del storage_root
+    contract, _version = create_contract_with_version(
+        client,
+        unp="910000012",
+    )
+    configure_executor(
+        {
+            "findings": [
+                {
+                    "category": "payment",
+                    "severity_level": "medium",
+                    "title": "Отсутствие срока оплаты",
+                    "description": (
+                        "Срок оплаты не указан, "
+                        "что создаёт риск спора."
+                    ),
+                    "evidence": [
+                        {
+                            "block_id": None,
+                            "quote": (
+                                "Оплата производится "
+                                "в течение 10 дней"
+                            ),
+                            "occurrence": 1,
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+    original_context = (
+        app.dependency_overrides[
+            provide_contract_analysis_execution_context
+        ]()
+    )
+
+    class ResolvingExecutor(PayloadExecutor):
+        def execute(
+            self,
+            *,
+            evidence_index,
+            policy,
+        ):
+            block = next(
+                block
+                for block in evidence_index.blocks
+                if "Оплата производится"
+                in block.text
+            )
+            self.payload["findings"][0][
+                "evidence"
+            ][0]["block_id"] = block.block_id
+            return super().execute(
+                evidence_index=evidence_index,
+                policy=policy,
+            )
+
+    context = (
+        contract_analysis_executor
+        .ContractAnalysisExecutionContext(
+            executor=ResolvingExecutor(
+                original_context.executor.payload
+            ),
+            policy=build_policy(),
+        )
+    )
+    app.dependency_overrides[
+        provide_contract_analysis_execution_context
+    ] = lambda: context
+
+    response = client.post(
+        (
+            f"/contracts/{contract['id']}"
+            "/versions/1/analyses"
+        )
+    )
+
+    assert response.status_code == 201
+    result = response.json()
+    assert result["status"] == "completed"
+    assert result["findings"] == []
+    assert db_session.scalar(
+        select(func.count())
+        .select_from(FindingModel)
+        .where(
+            FindingModel.analysis_run_id
+            == result["id"]
+        )
+    ) == 0
+    assert db_session.scalar(
+        select(func.count())
+        .select_from(EvidenceModel)
+        .join(
+            FindingModel,
+            EvidenceModel.finding_id
+            == FindingModel.id,
+        )
+        .where(
+            FindingModel.analysis_run_id
+            == result["id"]
+        )
+    ) == 0
 
 
 def test_invalid_executor_result_is_saved_as_failed(
@@ -463,6 +657,69 @@ def test_disabled_analysis_returns_service_unavailable(
     }
 
 
+def test_running_analysis_blocks_another_contract(
+    client: TestClient,
+    db_session: Session,
+    storage_root: Path,
+) -> None:
+    del storage_root
+    running_contract, running_version = (
+        create_contract_with_version(
+            client,
+            unp="910000005",
+        )
+    )
+    queued_contract, _queued_version = (
+        create_contract_with_version(
+            client,
+            unp="910000006",
+        )
+    )
+    user_id = db_session.scalar(
+        select(User.id).where(
+            User.username == "test-admin"
+        )
+    )
+    policy = build_policy()
+    running = ContractAnalysisRun(
+        contract_id=running_contract["id"],
+        document_version_id=(
+            running_version["id"]
+        ),
+        version_number=1,
+        created_by_user_id=user_id,
+        status="running",
+        executor="test_executor",
+        model="test-model",
+        policy_id=policy.policy_id,
+        policy_version=policy.policy_version,
+        policy_sha256=(
+            contract_analysis_findings
+            .build_contract_analysis_policy_sha256(
+                policy
+            )
+        ),
+    )
+    db_session.add(running)
+    db_session.commit()
+    configure_executor({"findings": []})
+
+    response = client.post(
+
+            f"/contracts/{queued_contract['id']}"
+            "/versions/1/analyses"
+
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": (
+            "Другой анализ договоров уже "
+            "выполняется"
+        )
+    }
+
+
 def test_running_analysis_returns_conflict(
     client: TestClient,
     db_session: Session,
@@ -471,7 +728,7 @@ def test_running_analysis_returns_conflict(
     del storage_root
     contract, version = create_contract_with_version(
         client,
-        unp="910000005",
+        unp="910000007",
     )
     user_id = db_session.scalar(
         select(User.id).where(
@@ -510,7 +767,8 @@ def test_running_analysis_returns_conflict(
     assert response.status_code == 409
     assert response.json() == {
         "detail": (
-            "Для этой версии уже выполняется анализ"
+            "Другой анализ договоров уже "
+            "выполняется"
         )
     }
 

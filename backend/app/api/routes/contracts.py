@@ -311,8 +311,8 @@ def raise_contract_analysis_service_error(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "Для этой версии уже выполняется "
-                "анализ"
+                "Другой анализ договоров уже "
+                "выполняется"
             ),
         )
 

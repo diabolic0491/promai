@@ -17,10 +17,12 @@ from app.models.contract_analysis import (
     ContractAnalysisRunStatus,
 )
 from app.services import (
+    contract_analysis_deadlines,
     contract_analysis_evidence,
     contract_analysis_executor,
     contract_analysis_findings,
     contract_analysis_input,
+    contract_analysis_semantics,
     contract_documents,
 )
 
@@ -32,7 +34,7 @@ class ContractAnalysisRunNotFoundError(Exception):
 class ContractAnalysisAlreadyRunningError(
     Exception
 ):
-    """Для версии уже выполняется анализ."""
+    """Другой анализ уже выполняется."""
 
 
 @dataclass(frozen=True)
@@ -218,8 +220,6 @@ def create_running_analysis(
     )
     existing_run = session.scalar(
         select(ContractAnalysisRun.id).where(
-            ContractAnalysisRun.document_version_id
-            == version.id,
             ContractAnalysisRun.status
             == ContractAnalysisRunStatus.RUNNING.value,
         )
@@ -424,12 +424,53 @@ def run_contract_analysis(
                 policy=execution_context.policy,
             )
         )
-        machine_draft = (
+        validated_machine_draft = (
             contract_analysis_findings
             .build_contract_analysis_findings_machine_draft(
                 evidence_index,
                 policy=execution_context.policy,
                 findings=finding_drafts,
+            )
+        )
+        supported_finding_drafts = (
+            contract_analysis_semantics
+            .filter_semantically_supported_findings(
+                finding_drafts
+            )
+        )
+        deterministic_deadline_findings = (
+            contract_analysis_deadlines
+            .build_deterministic_deadline_findings(
+                evidence_index=evidence_index,
+                policy=execution_context.policy,
+            )
+        )
+        final_finding_drafts = (
+            contract_analysis_deadlines
+            .merge_deadline_findings(
+                model_findings=(
+                    supported_finding_drafts
+                ),
+                deterministic_findings=(
+                    deterministic_deadline_findings
+                ),
+            )
+        )
+        machine_draft = (
+            validated_machine_draft
+            if (
+                final_finding_drafts
+                == finding_drafts
+            )
+            else (
+                contract_analysis_findings
+                .build_contract_analysis_findings_machine_draft(
+                    evidence_index,
+                    policy=execution_context.policy,
+                    findings=(
+                        final_finding_drafts
+                    ),
+                )
             )
         )
         persist_completed_analysis(

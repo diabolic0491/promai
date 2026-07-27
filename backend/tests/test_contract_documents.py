@@ -372,6 +372,10 @@ def test_template_upload_rejects_invalid_docx_variable(
     )
     document.save(template_path)
 
+    templates_count_before = (
+        db_session.query(DocumentTemplate).count()
+    )
+
     with template_path.open("rb") as template_file:
         response = client.post(
             "/document-templates",
@@ -406,7 +410,7 @@ def test_template_upload_rejects_invalid_docx_variable(
     )
     assert (
         db_session.query(DocumentTemplate).count()
-        == 0
+        == templates_count_before
     )
 
 

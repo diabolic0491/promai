@@ -132,8 +132,8 @@ class ContractAnalysisRun(Base):
             ),
         ),
         Index(
-            "uq_contract_analysis_runs_active_version",
-            "document_version_id",
+            "uq_contract_analysis_runs_single_running",
+            "status",
             unique=True,
             postgresql_where=text(
                 "status = 'running'"
