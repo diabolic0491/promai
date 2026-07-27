@@ -23,6 +23,11 @@ def build_evidence_index():
         "Оплата производится в течение 10 дней. "
         "Оплата производится после поставки."
     )
+
+    return build_evidence_index_from_text(text)
+
+
+def build_evidence_index_from_text(text: str):
     encoded = text.encode("utf-8")
     analysis_input = ContractAnalysisInput(
         contract_id=17,
@@ -97,6 +102,7 @@ def test_load_policy_and_build_enabled_context(
             "test-key"
         ),
         contract_analysis_timeout_seconds=15,
+        contract_analysis_batch_max_characters=6_000,
         contract_analysis_policy_path=str(
             policy_path
         ),
@@ -118,6 +124,11 @@ def test_load_policy_and_build_enabled_context(
         "http://llm.local/v1"
     )
     assert context.executor.timeout_seconds == 15
+    assert (
+        context.executor
+        .batch_max_characters
+        == 6_000
+    )
 
 
 def test_disabled_and_invalid_configuration_are_rejected(
@@ -126,6 +137,7 @@ def test_disabled_and_invalid_configuration_are_rejected(
     base_settings = Settings(
         database_url="sqlite://",
         auth_secret_key=SecretStr("x" * 32),
+        contract_analysis_enabled=False,
     )
 
     with pytest.raises(
@@ -253,7 +265,125 @@ def test_quote_occurrence_is_resolved_by_backend(
     assert reference.quote == quote
 
 
-def test_openai_compatible_executor_uses_json_only(
+def test_unique_quote_recovers_wrong_occurrence(
+) -> None:
+    evidence_index = build_evidence_index()
+    block = evidence_index.blocks[1]
+    quote = "10 дней"
+    drafts = (
+        contract_analysis_executor
+        .parse_executor_findings(
+            payload={
+                "findings": [
+                    {
+                        "category": "payment",
+                        "severity_level": "medium",
+                        "title": "Срок оплаты",
+                        "description": (
+                            "Условие требует проверки"
+                        ),
+                        "evidence": [
+                            {
+                                "block_id": (
+                                    block.block_id
+                                ),
+                                "quote": quote,
+                                "occurrence": 8,
+                            }
+                        ],
+                    }
+                ]
+            },
+            evidence_index=evidence_index,
+        )
+    )
+
+    reference = drafts[0].evidence_references[0]
+
+    assert reference.start_character == (
+        block.start_character
+        + block.text.index(quote)
+    )
+    assert reference.quote == quote
+
+
+def test_inexact_evidence_discards_only_its_finding(
+) -> None:
+    evidence_index = build_evidence_index()
+    block = evidence_index.blocks[1]
+    drafts = (
+        contract_analysis_executor
+        .parse_executor_findings(
+            payload={
+                "findings": [
+                    {
+                        "category": "payment",
+                        "severity_level": "medium",
+                        "title": "Неточная цитата",
+                        "description": (
+                            "Не должна попасть в результат"
+                        ),
+                        "evidence": [
+                            {
+                                "block_id": (
+                                    block.block_id
+                                ),
+                                "quote": (
+                                    "Оплата выполняется "
+                                    "после поставки"
+                                ),
+                                "occurrence": 1,
+                            }
+                        ],
+                    },
+                    {
+                        "category": "payment",
+                        "severity_level": "medium",
+                        "title": "Точная цитата",
+                        "description": (
+                            "Должна попасть в результат"
+                        ),
+                        "evidence": [
+                            {
+                                "block_id": (
+                                    block.block_id
+                                ),
+                                "quote": "после поставки",
+                                "occurrence": 7,
+                            }
+                        ],
+                    },
+                ]
+            },
+            evidence_index=evidence_index,
+        )
+    )
+
+    assert len(drafts) == 1
+    assert drafts[0].title == "Точная цитата"
+    assert (
+        drafts[0].evidence_references[0].quote
+        == "после поставки"
+    )
+
+
+def test_ambiguous_quote_rejects_wrong_occurrence(
+) -> None:
+    with pytest.raises(
+        contract_analysis_executor
+        .InvalidContractAnalysisExecutorResponseError
+    ):
+        (
+            contract_analysis_executor
+            .find_quote_occurrence(
+                block_text="Оплата. Оплата.",
+                quote="Оплата",
+                occurrence=3,
+            )
+        )
+
+
+def test_openai_compatible_executor_uses_strict_schema(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     evidence_index = build_evidence_index()
@@ -332,11 +462,280 @@ def test_openai_compatible_executor_uses_json_only(
         "Content-Type": "application/json",
     }
     request_payload = captured["json"]
-    assert request_payload["response_format"] == {
-        "type": "json_object"
-    }
+    assert (
+        request_payload["reasoning_effort"]
+        == "none"
+    )
+    response_format = request_payload[
+        "response_format"
+    ]
+    assert response_format["type"] == (
+        "json_schema"
+    )
+    json_schema = response_format["json_schema"]
+    assert json_schema["strict"] is True
+    schema = json_schema["schema"]
+    assert schema["additionalProperties"] is False
+    assert (
+        schema["properties"]["findings"][
+            "maxItems"
+        ]
+        == 4
+    )
+    finding_schema = (
+        schema["properties"]["findings"]["items"]
+    )
+    assert (
+        finding_schema["additionalProperties"]
+        is False
+    )
+    assert (
+        finding_schema["properties"]["category"][
+            "enum"
+        ]
+        == ["payment"]
+    )
+    assert (
+        finding_schema["properties"]["title"][
+            "maxLength"
+        ]
+        == 120
+    )
+    assert (
+        finding_schema["properties"]["description"][
+            "maxLength"
+        ]
+        == 300
+    )
+    assert (
+        finding_schema["properties"]["evidence"][
+            "maxItems"
+        ]
+        == 2
+    )
+    evidence_schema = (
+        finding_schema["properties"]["evidence"][
+            "items"
+        ]
+    )
+    assert evidence_schema[
+        "additionalProperties"
+    ] is False
+    assert evidence_schema["properties"][
+        "block_id"
+    ]["enum"] == [
+        block.block_id
+        for block in evidence_index.blocks
+    ]
+    assert (
+        evidence_schema["properties"]["quote"][
+            "maxLength"
+        ]
+        == 240
+    )
     assert evidence_index.blocks[1].text in (
         request_payload["messages"][1]["content"]
+    )
+    assert "occurrence — это не номер вывода" in (
+        request_payload["messages"][0]["content"]
+    )
+    assert "не более 4 наиболее" in (
+        request_payload["messages"][0]["content"]
+    )
+    assert "пометкой «продолжение»" in (
+        request_payload["messages"][0]["content"]
+    )
+    assert "две разные цитаты" in (
+        request_payload["messages"][0]["content"]
+    )
+    assert "нормативные источники не переданы" in (
+        request_payload["messages"][0]["content"]
+    )
+    assert "Не добавляй числа, которых нет" in (
+        request_payload["messages"][0]["content"]
+    )
+    assert "не только фрагмент срока" in (
+        request_payload["messages"][0]["content"]
+    )
+    assert "одно наиболее значимое замечание" in (
+        request_payload["messages"][0]["content"]
+    )
+    assert "начало срока неопределённым" in (
+        request_payload["messages"][0]["content"]
+    )
+    assert "прямо требует сохранности" in (
+        request_payload["messages"][0]["content"]
+    )
+    assert "Само различие формул" in (
+        request_payload["messages"][0]["content"]
+    )
+    assert "до полного исполнения" in (
+        request_payload["messages"][0]["content"]
+    )
+    assert "для несогласованных сроков" in (
+        request_payload["messages"][0]["content"]
+    )
+
+
+def test_executor_batches_blocks_and_preserves_quote_offsets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    text = (
+        "[BODY]\n"
+        + "Вводная часть. " * 8
+        + "Условие оплаты действует 10 дней."
+    )
+    evidence_index = (
+        build_evidence_index_from_text(text)
+    )
+    requests: list[dict[str, object]] = []
+
+    def fake_post(
+        url: str,
+        **kwargs,
+    ) -> httpx.Response:
+        request_payload = kwargs["json"]
+        requests.append(request_payload)
+        analysis_payload = json.loads(
+            request_payload["messages"][1][
+                "content"
+            ]
+        )
+        batch_number = analysis_payload[
+            "analysis_scope"
+        ]["batch_number"]
+        evidence_block = analysis_payload[
+            "evidence_blocks"
+        ][0]
+        quote = (
+            "Условие оплаты"
+            if "Условие оплаты"
+            in evidence_block["text"]
+            else evidence_block["text"][
+                :10
+            ].strip()
+        )
+        request = httpx.Request("POST", url)
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "findings": [
+                                        {
+                                            "category": "payment",
+                                            "severity_level": "medium",
+                                            "title": (
+                                                "Пакет "
+                                                f"{batch_number}"
+                                            ),
+                                            "description": (
+                                                "Подтверждённое "
+                                                "условие"
+                                            ),
+                                            "evidence": [
+                                                {
+                                                    "block_id": (
+                                                        evidence_block[
+                                                            "block_id"
+                                                        ]
+                                                    ),
+                                                    "quote": quote,
+                                                    "occurrence": 1,
+                                                }
+                                            ],
+                                        }
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    monkeypatch.setattr(
+        contract_analysis_executor.httpx,
+        "post",
+        fake_post,
+    )
+    executor = (
+        contract_analysis_executor
+        .OpenAICompatibleContractAnalysisExecutor(
+            api_base_url="http://llm.local/v1",
+            api_key="secret",
+            model="model",
+            timeout_seconds=10,
+            batch_max_characters=260,
+        )
+    )
+
+    drafts = executor.execute(
+        evidence_index=evidence_index,
+        policy=build_policy(),
+    )
+
+    assert len(requests) > 1
+    assert len(drafts) == len(requests)
+    for ordinal, request_payload in enumerate(
+        requests,
+        start=1,
+    ):
+        analysis_payload = json.loads(
+            request_payload["messages"][1][
+                "content"
+            ]
+        )
+        assert analysis_payload[
+            "analysis_scope"
+        ] == {
+            "batch_number": ordinal,
+            "batch_count": len(requests),
+        }
+
+    quote_draft = next(
+        draft
+        for draft in drafts
+        if draft.evidence_references[0].quote
+        == "Условие оплаты"
+    )
+    reference = quote_draft.evidence_references[
+        0
+    ]
+    assert reference.start_character == (
+        text.index("Условие оплаты")
+    )
+    assert reference.end_character == (
+        reference.start_character
+        + len("Условие оплаты")
+    )
+
+
+def test_repository_policy_file_is_valid() -> None:
+    policy_path = (
+        Path(__file__).parents[1]
+        / "config"
+        / "contract_analysis_policy.v1.json"
+    )
+
+    policy = (
+        contract_analysis_executor
+        .load_contract_analysis_policy(
+            str(policy_path)
+        )
+    )
+
+    assert policy.policy_id == (
+        "promai-contract-analysis-rb"
+    )
+    assert "payment" in policy.allowed_categories
+    assert "critical" in (
+        policy.allowed_severity_levels
     )
 
 

@@ -1,0 +1,27 @@
+{
+  "policy_id": "promai-contract-analysis-rb",
+  "policy_version": "1.0.0",
+  "allowed_categories": [
+    "subject",
+    "price",
+    "payment",
+    "delivery",
+    "acceptance",
+    "quality",
+    "warranty",
+    "liability",
+    "force_majeure",
+    "termination",
+    "dispute_resolution",
+    "confidentiality",
+    "personal_data",
+    "intellectual_property",
+    "compliance"
+  ],
+  "allowed_severity_levels": [
+    "low",
+    "medium",
+    "high",
+    "critical"
+  ]
+}

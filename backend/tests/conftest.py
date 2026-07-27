@@ -12,6 +12,7 @@ from sqlalchemy.orm import (
 os.environ["AUTH_SECRET_KEY"] = (
     "test-only-secret-key-at-least-32-characters"
 )
+os.environ["CONTRACT_ANALYSIS_ENABLED"] = "false"
 
 from app.core.security import (  # noqa: E402
     create_access_token,
