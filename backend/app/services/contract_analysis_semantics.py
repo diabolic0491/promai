@@ -31,6 +31,8 @@ EXTERNAL_NORMATIVE_CLAIM_PATTERNS = (
 )
 COMPARISON_CLAIM_PATTERNS = (
     r"\bпротивореч\w*",
+    r"\bнесогласован\w*",
+    r"\bне\s+согласу\w*",
     r"\bразлич\w*",
     r"\bрасхожден\w*",
     r"\bнесоответств\w*",
@@ -100,6 +102,20 @@ FULL_PERFORMANCE_TERM_CLAIM_PATTERNS = (
 )
 FULL_PERFORMANCE_TERM_EVIDENCE_PATTERNS = (
     r"\bдо\s+полн\w*\s+(?:его\s+)?исполнен\w*",
+)
+DELIVERY_STAGE_EVIDENCE_PATTERNS = (
+    r"\bтовар\w*\s+постав\w*",
+    r"\bпоставк\w*\s+товар\w*",
+    r"\bсрок\w*\s+поставк\w*",
+)
+WORK_STAGE_EVIDENCE_PATTERNS = (
+    r"\bвыполн\w*(?:\s+\w+){0,5}\s+работ\w*",
+    r"\bмонтажн\w*\s+работ\w*",
+    r"\bмонтаж\w*",
+)
+POST_DELIVERY_WORK_EVIDENCE_PATTERNS = (
+    r"\bпосле\s+поставк\w*",
+    r"\bс\s+момента\s+поставк\w*",
 )
 INCOMPLETE_COMPARISON_QUOTE_PATTERNS = (
     r"^в\s+течение\b",
@@ -345,6 +361,58 @@ def is_unsupported_full_performance_term_claim(
     )
 
 
+def is_sequential_delivery_and_work_comparison(
+    draft: (
+        contract_analysis_findings
+        .ContractAnalysisFindingDraft
+    ),
+) -> bool:
+    if (
+        draft.category != "delivery"
+        or not is_comparison_finding(draft)
+        or len(draft.evidence_references) != 2
+    ):
+        return False
+
+    evidence_quotes = tuple(
+        normalize_semantic_text(reference.quote)
+        for reference in draft.evidence_references
+    )
+    delivery_stage_quotes = tuple(
+        quote
+        for quote in evidence_quotes
+        if (
+            contains_pattern(
+                quote,
+                DELIVERY_STAGE_EVIDENCE_PATTERNS,
+            )
+            and not contains_pattern(
+                quote,
+                WORK_STAGE_EVIDENCE_PATTERNS,
+            )
+        )
+    )
+    post_delivery_work_quotes = tuple(
+        quote
+        for quote in evidence_quotes
+        if (
+            contains_pattern(
+                quote,
+                WORK_STAGE_EVIDENCE_PATTERNS,
+            )
+            and contains_pattern(
+                quote,
+                POST_DELIVERY_WORK_EVIDENCE_PATTERNS,
+            )
+        )
+    )
+
+    return bool(
+        delivery_stage_quotes
+        and post_delivery_work_quotes
+    )
+
+
 def direct_percentage_comparisons_are_valid(
     text: str,
 ) -> bool:
@@ -539,6 +607,11 @@ def normalize_semantically_supported_finding(
         return None
 
     if is_unsupported_full_performance_term_claim(
+        draft
+    ):
+        return None
+
+    if is_sequential_delivery_and_work_comparison(
         draft
     ):
         return None

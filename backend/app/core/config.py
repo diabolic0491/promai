@@ -44,6 +44,11 @@ class Settings(BaseSettings):
             le=100_000,
         )
     )
+    contract_analysis_max_output_tokens: int = Field(
+        default=1_600,
+        ge=256,
+        le=8_192,
+    )
     contract_analysis_policy_path: str | None = None
 
     model_config = SettingsConfigDict(
