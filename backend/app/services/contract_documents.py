@@ -31,6 +31,10 @@ from app.models.document_template import (
 from app.models.organization_profile import (
     OrganizationProfile,
 )
+from app.services.pagination import (
+    PageResult,
+    paginate_scalars,
+)
 from app.services.technical_specification_docx import (
     InvalidDocxTemplateError,
     MissingTemplateVariablesError,
@@ -791,7 +795,7 @@ def list_contract_document_versions(
     *,
     limit: int = 100,
     offset: int = 0,
-) -> list[ContractDocumentVersion]:
+) -> PageResult[ContractDocumentVersion]:
     get_contract_by_id(
         session=session,
         contract_id=contract_id,
@@ -806,11 +810,14 @@ def list_contract_document_versions(
         .order_by(
             ContractDocumentVersion.version_number.desc()
         )
-        .offset(offset)
-        .limit(limit)
     )
 
-    return list(session.scalars(statement).all())
+    return paginate_scalars(
+        session=session,
+        statement=statement,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def get_contract_document_version(

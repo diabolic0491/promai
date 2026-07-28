@@ -200,3 +200,18 @@ class TechnicalSpecification(Base):
     @property
     def is_archived(self) -> bool:
         return self.archived_at is not None
+
+    @property
+    def counterparty_name(self) -> str:
+        return self.counterparty.name
+
+    @property
+    def contract_number(self) -> str | None:
+        if self.contract is None:
+            return None
+
+        return self.contract.number
+
+    @property
+    def template_name(self) -> str:
+        return self.template.name

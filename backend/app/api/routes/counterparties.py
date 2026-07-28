@@ -19,6 +19,7 @@ from app.schemas.counterparty import (
     CounterpartyRead,
     CounterpartyUpdate,
 )
+from app.schemas.pagination import Page
 from app.services import counterparties as service
 
 
@@ -59,7 +60,7 @@ def create_counterparty(
 
 @router.get(
     "",
-    response_model=list[CounterpartyRead],
+    response_model=Page[CounterpartyRead],
 )
 def list_counterparties(
     session: DatabaseSession,
@@ -85,13 +86,19 @@ def list_counterparties(
             description="Показывать архивных контрагентов",
         ),
     ] = False,
-) -> list[Counterparty]:
-    return service.list_counterparties(
+) -> Page[CounterpartyRead]:
+    result = service.list_counterparties(
         session=session,
         search=search,
         limit=limit,
         offset=offset,
         include_archived=include_archived,
+    )
+    return Page[CounterpartyRead](
+        items=result.items,
+        total=result.total,
+        limit=result.limit,
+        offset=result.offset,
     )
 
 

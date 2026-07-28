@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import or_, select
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.contract import Contract
 from app.models.contract_status_history import (
@@ -15,6 +15,10 @@ from app.schemas.contract import (
     ContractUpdate,
 )
 from app.services import contract_documents
+from app.services.pagination import (
+    PageResult,
+    paginate_scalars,
+)
 
 from app.models.contract_event import (
     ContractEvent,
@@ -148,11 +152,19 @@ def list_contracts(
     session: Session,
     counterparty_id: int | None = None,
     status: str | None = None,
+    search: str | None = None,
     include_archived: bool = False,
     limit: int = 20,
     offset: int = 0,
-) -> list[Contract]:
-    statement = select(Contract)
+) -> PageResult[Contract]:
+    statement = (
+        select(Contract)
+        .join(Counterparty)
+        .options(
+            selectinload(Contract.counterparty),
+            selectinload(Contract.template),
+        )
+    )
 
     if counterparty_id is not None:
         statement = statement.where(
@@ -164,28 +176,56 @@ def list_contracts(
             Contract.status == status
         )
 
+    if search:
+        normalized_search = search.strip()
+        statement = statement.where(
+            or_(
+                Contract.number.ilike(
+                    f"%{normalized_search}%"
+                ),
+                Contract.title.ilike(
+                    f"%{normalized_search}%"
+                ),
+                Counterparty.unp.ilike(
+                    f"%{normalized_search}%"
+                ),
+                Counterparty.name.ilike(
+                    f"%{normalized_search}%"
+                ),
+                Counterparty.short_name.ilike(
+                    f"%{normalized_search}%"
+                ),
+            )
+        )
+
     if not include_archived:
         statement = statement.where(
             Contract.archived_at.is_(None)
         )
 
-    statement = (
-        statement
-        .order_by(Contract.id.desc())
-        .offset(offset)
-        .limit(limit)
+    statement = statement.order_by(
+        Contract.id.desc()
     )
 
-    return list(session.scalars(statement).all())
+    return paginate_scalars(
+        session=session,
+        statement=statement,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def get_contract_by_id(
     session: Session,
     contract_id: int,
 ) -> Contract:
-    contract = session.get(
-        Contract,
-        contract_id,
+    contract = session.scalar(
+        select(Contract)
+        .options(
+            selectinload(Contract.counterparty),
+            selectinload(Contract.template),
+        )
+        .where(Contract.id == contract_id)
     )
 
     if contract is None:

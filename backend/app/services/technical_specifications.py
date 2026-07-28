@@ -4,8 +4,8 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import or_, select
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
 from app.models.contract import Contract
@@ -32,6 +32,10 @@ from app.services.technical_specification_docx import (
     flatten_form_data,
     format_date,
     render_docx_template,
+)
+from app.services.pagination import (
+    PageResult,
+    paginate_scalars,
 )
 
 
@@ -598,12 +602,39 @@ def list_technical_specifications(
     technical_specification_status: (
         TechnicalSpecificationStatus | None
     ) = None,
+    search: str | None = None,
     include_archived: bool = False,
     limit: int = 20,
     offset: int = 0,
-) -> list[TechnicalSpecification]:
-    statement = select(
-        TechnicalSpecification
+) -> PageResult[TechnicalSpecification]:
+    statement = (
+        select(TechnicalSpecification)
+        .join(
+            Counterparty,
+            TechnicalSpecification.counterparty_id
+            == Counterparty.id,
+        )
+        .join(
+            DocumentTemplate,
+            TechnicalSpecification.template_id
+            == DocumentTemplate.id,
+        )
+        .outerjoin(
+            Contract,
+            TechnicalSpecification.contract_id
+            == Contract.id,
+        )
+        .options(
+            selectinload(
+                TechnicalSpecification.counterparty
+            ),
+            selectinload(
+                TechnicalSpecification.contract
+            ),
+            selectinload(
+                TechnicalSpecification.template
+            ),
+        )
     )
 
     if counterparty_id is not None:
@@ -630,23 +661,53 @@ def list_technical_specifications(
             == technical_specification_status.value
         )
 
+    if search:
+        normalized_search = search.strip()
+        statement = statement.where(
+            or_(
+                TechnicalSpecification.title.ilike(
+                    f"%{normalized_search}%"
+                ),
+                (
+                    TechnicalSpecification
+                    .procurement_subject
+                    .ilike(
+                        f"%{normalized_search}%"
+                    )
+                ),
+                Counterparty.unp.ilike(
+                    f"%{normalized_search}%"
+                ),
+                Counterparty.name.ilike(
+                    f"%{normalized_search}%"
+                ),
+                Counterparty.short_name.ilike(
+                    f"%{normalized_search}%"
+                ),
+                Contract.number.ilike(
+                    f"%{normalized_search}%"
+                ),
+                DocumentTemplate.name.ilike(
+                    f"%{normalized_search}%"
+                ),
+            )
+        )
+
     if not include_archived:
         statement = statement.where(
             TechnicalSpecification.archived_at
             .is_(None)
         )
 
-    statement = (
-        statement
-        .order_by(
-            TechnicalSpecification.id.desc()
-        )
-        .offset(offset)
-        .limit(limit)
+    statement = statement.order_by(
+        TechnicalSpecification.id.desc()
     )
 
-    return list(
-        session.scalars(statement).all()
+    return paginate_scalars(
+        session=session,
+        statement=statement,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -654,9 +715,23 @@ def get_technical_specification_by_id(
     session: Session,
     technical_specification_id: int,
 ) -> TechnicalSpecification:
-    technical_specification = session.get(
-        TechnicalSpecification,
-        technical_specification_id,
+    technical_specification = session.scalar(
+        select(TechnicalSpecification)
+        .options(
+            selectinload(
+                TechnicalSpecification.counterparty
+            ),
+            selectinload(
+                TechnicalSpecification.contract
+            ),
+            selectinload(
+                TechnicalSpecification.template
+            ),
+        )
+        .where(
+            TechnicalSpecification.id
+            == technical_specification_id
+        )
     )
 
     if technical_specification is None:

@@ -231,3 +231,14 @@ class Contract(Base):
     @property
     def is_archived(self) -> bool:
         return self.archived_at is not None
+
+    @property
+    def counterparty_name(self) -> str:
+        return self.counterparty.name
+
+    @property
+    def template_name(self) -> str | None:
+        if self.template is None:
+            return None
+
+        return self.template.name

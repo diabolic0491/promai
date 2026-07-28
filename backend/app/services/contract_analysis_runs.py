@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -25,6 +25,10 @@ from app.services import (
     contract_analysis_payments,
     contract_analysis_semantics,
     contract_documents,
+)
+from app.services.pagination import (
+    PageResult,
+    paginate_scalars,
 )
 
 
@@ -391,6 +395,44 @@ def run_contract_analysis(
         actor_user_id=actor_user_id,
         execution_context=execution_context,
     )
+
+    return execute_contract_analysis(
+        session=session,
+        analysis_id=analysis_run.id,
+        execution_context=execution_context,
+    )
+
+
+def execute_contract_analysis(
+    *,
+    session: Session,
+    analysis_id: int,
+    execution_context: (
+        contract_analysis_executor
+        .ContractAnalysisExecutionContext
+    ),
+) -> ContractAnalysisRun:
+    analysis_run = session.get(
+        ContractAnalysisRun,
+        analysis_id,
+    )
+
+    if analysis_run is None:
+        raise ContractAnalysisRunNotFoundError
+
+    if (
+        analysis_run.status
+        != ContractAnalysisRunStatus.RUNNING.value
+    ):
+        return get_contract_analysis_run(
+            session=session,
+            contract_id=analysis_run.contract_id,
+            version_number=analysis_run.version_number,
+            analysis_id=analysis_run.id,
+        )
+
+    contract_id = analysis_run.contract_id
+    version_number = analysis_run.version_number
     analysis_input = None
 
     try:
@@ -528,6 +570,34 @@ def run_contract_analysis(
     )
 
 
+def fail_interrupted_analyses(
+    *,
+    session: Session,
+) -> int:
+    completed_at = datetime.now(timezone.utc)
+    result = session.execute(
+        update(ContractAnalysisRun)
+        .where(
+            ContractAnalysisRun.status
+            == ContractAnalysisRunStatus.RUNNING.value
+        )
+        .values(
+            status=(
+                ContractAnalysisRunStatus.FAILED.value
+            ),
+            error_code="analysis_interrupted",
+            error_message=(
+                "Выполнение анализа было прервано "
+                "перезапуском backend"
+            ),
+            completed_at=completed_at,
+        )
+    )
+    session.commit()
+
+    return result.rowcount or 0
+
+
 def list_contract_analysis_runs(
     *,
     session: Session,
@@ -535,7 +605,7 @@ def list_contract_analysis_runs(
     version_number: int,
     limit: int = 20,
     offset: int = 0,
-) -> list[ContractAnalysisRun]:
+) -> PageResult[ContractAnalysisRun]:
     version = get_contract_version_for_analysis(
         session=session,
         contract_id=contract_id,
@@ -551,11 +621,14 @@ def list_contract_analysis_runs(
             ContractAnalysisRun.started_at.desc(),
             ContractAnalysisRun.id.desc(),
         )
-        .offset(offset)
-        .limit(limit)
     )
 
-    return list(session.scalars(statement).all())
+    return paginate_scalars(
+        session=session,
+        statement=statement,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def get_contract_analysis_run(

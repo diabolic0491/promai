@@ -7,6 +7,10 @@ from app.schemas.counterparty import (
     CounterpartyCreate,
     CounterpartyUpdate,
 )
+from app.services.pagination import (
+    PageResult,
+    paginate_scalars,
+)
 
 
 class CounterpartyAlreadyExistsError(Exception):
@@ -68,7 +72,7 @@ def list_counterparties(
     limit: int = 20,
     offset: int = 0,
     include_archived: bool = False,
-) -> list[Counterparty]:
+) -> PageResult[Counterparty]:
     statement = select(Counterparty)
 
     if not include_archived:
@@ -93,14 +97,16 @@ def list_counterparties(
             )
         )
 
-    statement = (
-        statement
-        .order_by(Counterparty.id.desc())
-        .offset(offset)
-        .limit(limit)
+    statement = statement.order_by(
+        Counterparty.id.desc()
     )
 
-    return list(session.scalars(statement).all())
+    return paginate_scalars(
+        session=session,
+        statement=statement,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def get_counterparty_by_id(

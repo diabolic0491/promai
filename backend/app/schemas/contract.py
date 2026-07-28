@@ -292,7 +292,9 @@ class ContractRead(BaseModel):
 
     id: int
     counterparty_id: int
+    counterparty_name: str
     template_id: int | None
+    template_name: str | None
 
     number: str
     title: str
@@ -314,7 +316,6 @@ class ContractRead(BaseModel):
     form_data: dict[str, Any]
 
     generated_file_name: str | None
-    generated_storage_path: str | None
 
     created_at: datetime
     updated_at: datetime

@@ -358,7 +358,7 @@ def test_archived_contract_hidden_from_default_list(
 
     default_ids = {
         item["id"]
-        for item in default_response.json()
+        for item in default_response.json()["items"]
     }
 
     assert contract["id"] not in default_ids
@@ -374,7 +374,7 @@ def test_archived_contract_hidden_from_default_list(
 
     all_ids = {
         item["id"]
-        for item in archived_response.json()
+        for item in archived_response.json()["items"]
     }
 
     assert contract["id"] in all_ids
@@ -412,7 +412,9 @@ def test_contracts_can_be_filtered_by_counterparty(
 
     assert response.status_code == 200
 
-    contracts = response.json()
+    contracts_page = response.json()
+    contracts = contracts_page["items"]
+    assert contracts_page["total"] == 1
     contract_ids = {
         contract["id"]
         for contract in contracts
