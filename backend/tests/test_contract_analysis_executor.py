@@ -103,6 +103,7 @@ def test_load_policy_and_build_enabled_context(
         ),
         contract_analysis_timeout_seconds=15,
         contract_analysis_batch_max_characters=6_000,
+        contract_analysis_max_output_tokens=1_400,
         contract_analysis_policy_path=str(
             policy_path
         ),
@@ -128,6 +129,10 @@ def test_load_policy_and_build_enabled_context(
         context.executor
         .batch_max_characters
         == 6_000
+    )
+    assert (
+        context.executor.max_output_tokens
+        == 1_400
     )
 
 
@@ -396,6 +401,19 @@ def test_openai_compatible_executor_uses_strict_schema(
     ) -> httpx.Response:
         captured["url"] = url
         captured.update(kwargs)
+        request_payload = kwargs["json"]
+        analysis_payload = json.loads(
+            request_payload["messages"][1][
+                "content"
+            ]
+        )
+        model_block_id = next(
+            evidence_block["block_id"]
+            for evidence_block
+            in analysis_payload["evidence_blocks"]
+            if "10 дней"
+            in evidence_block["text"]
+        )
         request = httpx.Request(
             "POST",
             url,
@@ -417,7 +435,7 @@ def test_openai_compatible_executor_uses_strict_schema(
                                             "description": "Проверить срок",
                                             "evidence": [
                                                 {
-                                                    "block_id": block.block_id,
+                                                    "block_id": model_block_id,
                                                     "quote": "10 дней",
                                                     "occurrence": 1,
                                                 }
@@ -466,6 +484,7 @@ def test_openai_compatible_executor_uses_strict_schema(
         request_payload["reasoning_effort"]
         == "none"
     )
+    assert request_payload["max_tokens"] == 1_600
     response_format = request_payload[
         "response_format"
     ]
@@ -524,8 +543,11 @@ def test_openai_compatible_executor_uses_strict_schema(
     assert evidence_schema["properties"][
         "block_id"
     ]["enum"] == [
-        block.block_id
-        for block in evidence_index.blocks
+        f"b{ordinal}"
+        for ordinal, _block in enumerate(
+            evidence_index.blocks,
+            start=1,
+        )
     ]
     assert (
         evidence_schema["properties"]["quote"][
@@ -535,6 +557,33 @@ def test_openai_compatible_executor_uses_strict_schema(
     )
     assert evidence_index.blocks[1].text in (
         request_payload["messages"][1]["content"]
+    )
+    analysis_payload = json.loads(
+        request_payload["messages"][1][
+            "content"
+        ]
+    )
+    assert [
+        evidence_block["block_id"]
+        for evidence_block
+        in analysis_payload["evidence_blocks"]
+    ] == [
+        f"b{ordinal}"
+        for ordinal, _block in enumerate(
+            evidence_index.blocks,
+            start=1,
+        )
+    ]
+    assert all(
+        block.block_id
+        not in request_payload["messages"][1][
+            "content"
+        ]
+        for block in evidence_index.blocks
+    )
+    assert (
+        drafts[0].evidence_references[0].block_id
+        == block.block_id
     )
     assert "occurrence — это не номер вывода" in (
         request_payload["messages"][0]["content"]
@@ -567,6 +616,9 @@ def test_openai_compatible_executor_uses_strict_schema(
         request_payload["messages"][0]["content"]
     )
     assert "Само различие формул" in (
+        request_payload["messages"][0]["content"]
+    )
+    assert "сроки последовательных этапов" in (
         request_payload["messages"][0]["content"]
     )
     assert "до полного исполнения" in (
@@ -671,7 +723,7 @@ def test_executor_batches_blocks_and_preserves_quote_offsets(
             api_key="secret",
             model="model",
             timeout_seconds=10,
-            batch_max_characters=260,
+            batch_max_characters=110,
         )
     )
 
@@ -713,6 +765,42 @@ def test_executor_batches_blocks_and_preserves_quote_offsets(
     assert reference.end_character == (
         reference.start_character
         + len("Условие оплаты")
+    )
+
+
+def test_short_block_aliases_keep_small_contract_in_one_batch(
+) -> None:
+    text = "\n\n".join(
+        (
+            f"{ordinal}. Условие договора содержит "
+            "согласованный порядок исполнения."
+        )
+        for ordinal in range(1, 23)
+    )
+    evidence_index = build_evidence_index_from_text(
+        text
+    )
+
+    batches = (
+        contract_analysis_executor
+        .build_evidence_batches(
+            evidence_index=evidence_index,
+            max_characters=6_000,
+        )
+    )
+
+    assert len(evidence_index.blocks) == 22
+    assert len(batches) == 1
+    assert len(batches[0]) == 22
+    assert (
+        sum(
+            contract_analysis_executor
+            .estimate_evidence_segment_characters(
+                segment
+            )
+            for segment in batches[0]
+        )
+        <= 6_000
     )
 
 
