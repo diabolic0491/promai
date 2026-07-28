@@ -469,9 +469,9 @@ def test_generate_and_download_contract_docx(
     assert generated_contract["generated_file_name"] == (
         "Договор № Д-101_26.docx"
     )
-    assert generated_contract[
-        "generated_storage_path"
-    ] is not None
+    assert "generated_storage_path" not in (
+        generated_contract
+    )
 
     download_response = client.get(
         f"/contracts/{contract['id']}/download"
@@ -499,9 +499,11 @@ def test_generate_and_download_contract_docx(
         f"/contracts/{contract['id']}/versions"
     )
     assert versions_response.status_code == 200
-    versions = versions_response.json()
+    versions_page = versions_response.json()
+    versions = versions_page["items"]
 
     assert len(versions) == 1
+    assert versions_page["total"] == 1
     assert versions[0]["version_number"] == 1
     assert versions[0]["template_id"] == template["id"]
     assert versions[0]["template_name"] == (
@@ -583,9 +585,9 @@ def test_generate_reports_all_missing_variables(
     contract_response = client.get(
         f"/contracts/{contract['id']}"
     )
-    assert contract_response.json()[
-        "generated_storage_path"
-    ] is None
+    assert "generated_storage_path" not in (
+        contract_response.json()
+    )
 
 
 def test_contract_rejects_wrong_template_type(
@@ -730,7 +732,7 @@ def test_repeated_generation_preserves_all_versions(
         f"/contracts/{contract_data['id']}/versions"
     )
     assert versions_response.status_code == 200
-    versions = versions_response.json()
+    versions = versions_response.json()["items"]
 
     assert [
         version["version_number"]
@@ -824,9 +826,9 @@ def test_contract_update_preserves_generated_version(
     assert update_response.json()[
         "generated_file_name"
     ] == "Договор № Д-101_26.docx"
-    assert update_response.json()[
-        "generated_storage_path"
-    ] == str(generated_path)
+    assert "generated_storage_path" not in (
+        update_response.json()
+    )
     assert generated_path.is_file()
 
     download_response = client.get(
@@ -847,7 +849,7 @@ def test_contract_update_preserves_generated_version(
         f"/contracts/{contract_data['id']}/versions"
     )
     assert versions_response.status_code == 200
-    versions = versions_response.json()
+    versions = versions_response.json()["items"]
 
     assert [
         version["version_number"]
@@ -996,7 +998,9 @@ def test_upload_contract_docx_creates_version(
         f"/contracts/{contract['id']}/versions"
     )
     assert versions_response.status_code == 200
-    assert versions_response.json() == [version]
+    versions_page = versions_response.json()
+    assert versions_page["items"] == [version]
+    assert versions_page["total"] == 1
 
     version_download_response = client.get(
         (
@@ -1094,7 +1098,7 @@ def test_uploaded_and_generated_versions_share_sequence(
         f"/contracts/{contract['id']}/versions"
     )
     assert versions_response.status_code == 200
-    versions = versions_response.json()
+    versions = versions_response.json()["items"]
 
     assert [
         version["version_number"]
@@ -1172,7 +1176,12 @@ def test_upload_rejects_invalid_contract_document(
     }
     assert client.get(
         f"/contracts/{contract['id']}/versions"
-    ).json() == []
+    ).json() == {
+        "items": [],
+        "total": 0,
+        "limit": 100,
+        "offset": 0,
+    }
     assert not list(
         storage_root.rglob("*.docx")
     )
@@ -1214,7 +1223,12 @@ def test_upload_rejects_oversized_contract_document(
     }
     assert client.get(
         f"/contracts/{contract['id']}/versions"
-    ).json() == []
+    ).json() == {
+        "items": [],
+        "total": 0,
+        "limit": 100,
+        "offset": 0,
+    }
     assert not list(
         storage_root.rglob("*.docx")
     )
@@ -1258,7 +1272,12 @@ def test_archived_contract_rejects_document_upload(
     }
     assert client.get(
         f"/contracts/{contract['id']}/versions"
-    ).json() == []
+    ).json() == {
+        "items": [],
+        "total": 0,
+        "limit": 100,
+        "offset": 0,
+    }
     assert not list(
         storage_root.rglob("*.docx")
     )

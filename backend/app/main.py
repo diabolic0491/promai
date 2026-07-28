@@ -1,3 +1,6 @@
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -17,14 +20,34 @@ from app.api.routes.users import router as users_router
 from app.api.routes.technical_specifications import (
     router as technical_specifications_router,
 )
+from app.services import contract_analysis_jobs
 
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    interrupted_count = (
+        contract_analysis_jobs
+        .fail_interrupted_analysis_jobs()
+    )
+
+    if interrupted_count:
+        logger.warning(
+            "Marked %s interrupted contract analyses as failed",
+            interrupted_count,
+        )
+
+    yield
+
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     debug=settings.debug,
+    lifespan=lifespan,
 )
 
 app.add_middleware(

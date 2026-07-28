@@ -25,6 +25,7 @@ from app.models.user import User
 from app.services import (
     contract_analysis_executor,
     contract_analysis_findings,
+    contract_analysis_runs,
     contract_documents,
 )
 
@@ -231,6 +232,24 @@ def configure_executor(payload: object) -> None:
     ] = lambda: context
 
 
+def get_analysis_result(
+    client: TestClient,
+    *,
+    contract_id: int,
+    analysis_id: int,
+    version_number: int = 1,
+) -> dict[str, object]:
+    response = client.get(
+        (
+            f"/contracts/{contract_id}"
+            f"/versions/{version_number}"
+            f"/analyses/{analysis_id}"
+        )
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
 @pytest.fixture
 def storage_root(
     tmp_path: Path,
@@ -329,8 +348,17 @@ def test_analysis_is_saved_and_returned_by_api(
 
     )
 
-    assert response.status_code == 201
-    result = response.json()
+    assert response.status_code == 202
+    queued = response.json()
+    assert queued["status"] == "running"
+    assert queued["findings"] == []
+    assert queued["result_id"] is None
+
+    result = get_analysis_result(
+        client,
+        contract_id=contract["id"],
+        analysis_id=queued["id"],
+    )
     assert result["contract_id"] == contract["id"]
     assert result["document_version_id"] == version["id"]
     assert result["version_number"] == 1
@@ -365,8 +393,14 @@ def test_analysis_is_saved_and_returned_by_api(
 
     )
     assert list_response.status_code == 200
-    assert len(list_response.json()) == 1
-    assert "findings" not in list_response.json()[0]
+    analyses_page = list_response.json()
+    assert analyses_page["total"] == 1
+    assert analyses_page["limit"] == 20
+    assert analyses_page["offset"] == 0
+    assert len(analyses_page["items"]) == 1
+    assert "findings" not in (
+        analyses_page["items"][0]
+    )
 
     detail_response = client.get(
 
@@ -435,8 +469,14 @@ def test_empty_findings_are_completed(
 
     )
 
-    assert response.status_code == 201
-    result = response.json()
+    assert response.status_code == 202
+    queued = response.json()
+    assert queued["status"] == "running"
+    result = get_analysis_result(
+        client,
+        contract_id=contract["id"],
+        analysis_id=queued["id"],
+    )
     assert result["status"] == "completed"
     assert result["result_status"] == "machine_draft"
     assert result["requires_human_review"] is True
@@ -467,8 +507,14 @@ def test_deadline_conflict_is_saved_when_executor_misses_it(
         )
     )
 
-    assert response.status_code == 201
-    result = response.json()
+    assert response.status_code == 202
+    queued = response.json()
+    assert queued["status"] == "running"
+    result = get_analysis_result(
+        client,
+        contract_id=contract["id"],
+        analysis_id=queued["id"],
+    )
     assert result["status"] == "completed"
     assert len(result["findings"]) == 1
     finding = result["findings"][0]
@@ -507,8 +553,14 @@ def test_payment_conflicts_are_saved_when_executor_misses_them(
         )
     )
 
-    assert response.status_code == 201
-    result = response.json()
+    assert response.status_code == 202
+    queued = response.json()
+    assert queued["status"] == "running"
+    result = get_analysis_result(
+        client,
+        contract_id=contract["id"],
+        analysis_id=queued["id"],
+    )
     assert result["status"] == "completed"
     assert len(result["findings"]) == 2
     assert tuple(
@@ -627,8 +679,14 @@ def test_semantically_unsupported_finding_is_not_saved(
         )
     )
 
-    assert response.status_code == 201
-    result = response.json()
+    assert response.status_code == 202
+    queued = response.json()
+    assert queued["status"] == "running"
+    result = get_analysis_result(
+        client,
+        contract_id=contract["id"],
+        analysis_id=queued["id"],
+    )
     assert result["status"] == "completed"
     assert result["findings"] == []
     assert db_session.scalar(
@@ -682,26 +740,17 @@ def test_invalid_executor_result_is_saved_as_failed(
 
     )
 
-    assert response.status_code == 502
-    detail = response.json()["detail"]
-    assert detail["status"] == "failed"
-    assert detail["error_code"] == (
-        "invalid_executor_response"
-    )
-    assert "RAW-PROVIDER-SECRET" not in (
-        response.text
-    )
+    assert response.status_code == 202
+    queued = response.json()
+    assert queued["status"] == "running"
+    assert "RAW-PROVIDER-SECRET" not in response.text
 
-    analysis_id = detail["analysis_id"]
-    get_response = client.get(
-
-            f"/contracts/{contract['id']}"
-            "/versions/1/analyses/"
-            f"{analysis_id}"
-
+    analysis_id = queued["id"]
+    failed = get_analysis_result(
+        client,
+        contract_id=contract["id"],
+        analysis_id=analysis_id,
     )
-    assert get_response.status_code == 200
-    failed = get_response.json()
     assert failed["status"] == "failed"
     assert failed["result_id"] is None
     assert failed["result_status"] is None
@@ -894,3 +943,55 @@ def test_analysis_routes_require_authentication(
     assert response.json() == {
         "detail": "Требуется аутентификация"
     }
+
+
+def test_interrupted_analysis_is_failed_on_recovery(
+    client: TestClient,
+    db_session: Session,
+    storage_root: Path,
+) -> None:
+    del storage_root
+    contract, version = create_contract_with_version(
+        client,
+        unp="910000015",
+    )
+    user_id = db_session.scalar(
+        select(User.id).where(
+            User.username == "test-admin"
+        )
+    )
+    policy = build_policy()
+    running = ContractAnalysisRun(
+        contract_id=contract["id"],
+        document_version_id=version["id"],
+        version_number=1,
+        created_by_user_id=user_id,
+        status="running",
+        executor="test_executor",
+        model="test-model",
+        policy_id=policy.policy_id,
+        policy_version=policy.policy_version,
+        policy_sha256=(
+            contract_analysis_findings
+            .build_contract_analysis_policy_sha256(
+                policy
+            )
+        ),
+    )
+    db_session.add(running)
+    db_session.commit()
+
+    recovered_count = (
+        contract_analysis_runs
+        .fail_interrupted_analyses(
+            session=db_session,
+        )
+    )
+
+    assert recovered_count == 1
+    db_session.refresh(running)
+    assert running.status == "failed"
+    assert running.error_code == (
+        "analysis_interrupted"
+    )
+    assert running.completed_at is not None

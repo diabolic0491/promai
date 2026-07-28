@@ -17,6 +17,7 @@ from app.schemas.user import (
     UserRead,
     UserUpdate,
 )
+from app.schemas.pagination import Page
 from app.services import users as service
 
 
@@ -98,13 +99,20 @@ def create_user(
 
 @router.get(
     "",
-    response_model=list[UserRead],
+    response_model=Page[UserRead],
 )
 def list_users(
     _: AdminUser,
     session: DatabaseSession,
     role: UserRole | None = None,
     is_active: bool | None = None,
+    search: Annotated[
+        str | None,
+        Query(
+            min_length=1,
+            max_length=255,
+        ),
+    ] = None,
     limit: Annotated[
         int,
         Query(ge=1, le=200),
@@ -113,13 +121,20 @@ def list_users(
         int,
         Query(ge=0),
     ] = 0,
-) -> list[User]:
-    return service.list_users(
+) -> Page[UserRead]:
+    result = service.list_users(
         session=session,
         role=role,
         is_active=is_active,
+        search=search,
         limit=limit,
         offset=offset,
+    )
+    return Page[UserRead](
+        items=result.items,
+        total=result.total,
+        limit=result.limit,
+        offset=result.offset,
     )
 
 

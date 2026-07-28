@@ -1,11 +1,12 @@
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 from datetime import UTC, datetime
 
 from docx import Document
 from fastapi import UploadFile
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -15,6 +16,10 @@ from app.models.document_template import (
 )
 from app.schemas.document_template import (
     DocumentTemplateUpdate,
+)
+from app.services.pagination import (
+    PageResult,
+    paginate_scalars,
 )
 from app.services.technical_specification_docx import (
     get_invalid_template_variables,
@@ -27,6 +32,10 @@ from app.services.technical_specification_docx import (
 settings = get_settings()
 
 MAX_TEMPLATE_SIZE_BYTES = 10 * 1024 * 1024
+DOCX_MEDIA_TYPE = (
+    "application/vnd.openxmlformats-officedocument."
+    "wordprocessingml.document"
+)
 
 
 class DocumentTemplateNotFoundError(Exception):
@@ -74,6 +83,16 @@ class InvalidDocumentTemplateVariablesError(
 
 class DocumentTemplateAlreadyActiveError(Exception):
     """Шаблон уже активен."""
+
+
+class DocumentTemplateFileNotFoundError(Exception):
+    """Файл шаблона отсутствует в хранилище."""
+
+
+@dataclass(frozen=True)
+class DocumentTemplateFile:
+    path: Path
+    file_name: str
 
 
 def parse_required_variables(
@@ -227,9 +246,11 @@ def list_document_templates(
     *,
     template_type: DocumentTemplateType | None = None,
     include_archived: bool = False,
+    only_active: bool = False,
+    search: str | None = None,
     limit: int = 20,
     offset: int = 0,
-) -> list[DocumentTemplate]:
+) -> PageResult[DocumentTemplate]:
     statement = select(DocumentTemplate)
 
     if template_type is not None:
@@ -243,15 +264,34 @@ def list_document_templates(
             DocumentTemplate.archived_at.is_(None)
         )
 
-    statement = (
-        statement
-        .order_by(DocumentTemplate.id.desc())
-        .offset(offset)
-        .limit(limit)
+    if only_active:
+        statement = statement.where(
+            DocumentTemplate.is_active.is_(True),
+            DocumentTemplate.archived_at.is_(None),
+        )
+
+    if search:
+        normalized_search = search.strip()
+        statement = statement.where(
+            or_(
+                DocumentTemplate.name.ilike(
+                    f"%{normalized_search}%"
+                ),
+                DocumentTemplate.file_name.ilike(
+                    f"%{normalized_search}%"
+                ),
+            )
+        )
+
+    statement = statement.order_by(
+        DocumentTemplate.id.desc()
     )
 
-    return list(
-        session.scalars(statement).all()
+    return paginate_scalars(
+        session=session,
+        statement=statement,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -268,6 +308,36 @@ def get_document_template_by_id(
         raise DocumentTemplateNotFoundError
 
     return template
+
+
+def get_document_template_file(
+    session: Session,
+    template_id: int,
+) -> DocumentTemplateFile:
+    template = get_document_template_by_id(
+        session=session,
+        template_id=template_id,
+    )
+    templates_directory = (
+        Path(settings.storage_root) / "templates"
+    ).resolve()
+    candidate = Path(template.storage_path).resolve()
+
+    try:
+        candidate.relative_to(templates_directory)
+    except ValueError as error:
+        raise DocumentTemplateFileNotFoundError from error
+
+    if (
+        not candidate.is_file()
+        or candidate.suffix.lower() != ".docx"
+    ):
+        raise DocumentTemplateFileNotFoundError
+
+    return DocumentTemplateFile(
+        path=candidate,
+        file_name=template.file_name,
+    )
 
 
 def update_document_template(

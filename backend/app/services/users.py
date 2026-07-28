@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,10 @@ from app.models.user import User, UserRole
 from app.schemas.user import (
     UserCreate,
     UserUpdate,
+)
+from app.services.pagination import (
+    PageResult,
+    paginate_scalars,
 )
 
 
@@ -83,9 +87,10 @@ def list_users(
     *,
     role: UserRole | None = None,
     is_active: bool | None = None,
+    search: str | None = None,
     limit: int = 100,
     offset: int = 0,
-) -> list[User]:
+) -> PageResult[User]:
     statement = select(User)
 
     if role is not None:
@@ -94,9 +99,27 @@ def list_users(
     if is_active is not None:
         statement = statement.where(User.is_active == is_active)
 
-    statement = statement.order_by(User.id).offset(offset).limit(limit)
+    if search:
+        normalized_search = search.strip()
+        statement = statement.where(
+            or_(
+                User.username.ilike(
+                    f"%{normalized_search}%"
+                ),
+                User.full_name.ilike(
+                    f"%{normalized_search}%"
+                ),
+            )
+        )
 
-    return list(session.scalars(statement).all())
+    statement = statement.order_by(User.id)
+
+    return paginate_scalars(
+        session=session,
+        statement=statement,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def get_user_by_id(

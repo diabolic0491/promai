@@ -180,8 +180,11 @@ class TechnicalSpecificationRead(BaseModel):
     id: int
 
     counterparty_id: int
+    counterparty_name: str
     contract_id: int | None
+    contract_number: str | None
     template_id: int
+    template_name: str
 
     title: str
     procurement_subject: str
@@ -199,7 +202,6 @@ class TechnicalSpecificationRead(BaseModel):
     form_data: dict[str, Any]
 
     generated_file_name: str | None
-    generated_storage_path: str | None
 
     archived_at: datetime | None
     is_archived: bool

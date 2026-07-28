@@ -23,6 +23,7 @@ from app.schemas.technical_specification import (
     TechnicalSpecificationRead,
     TechnicalSpecificationUpdate,
 )
+from app.schemas.pagination import Page
 from app.services import technical_specifications as service
 
 
@@ -294,7 +295,7 @@ def create_technical_specification(
 
 @router.get(
     "",
-    response_model=list[TechnicalSpecificationRead],
+    response_model=Page[TechnicalSpecificationRead],
 )
 def list_technical_specifications(
     session: DatabaseSession,
@@ -313,6 +314,13 @@ def list_technical_specifications(
     technical_specification_status: (
         TechnicalSpecificationStatus | None
     ) = None,
+    search: Annotated[
+        str | None,
+        Query(
+            min_length=1,
+            max_length=500,
+        ),
+    ] = None,
     include_archived: bool = False,
     limit: Annotated[
         int,
@@ -322,8 +330,8 @@ def list_technical_specifications(
         int,
         Query(ge=0),
     ] = 0,
-) -> list[TechnicalSpecification]:
-    return service.list_technical_specifications(
+) -> Page[TechnicalSpecificationRead]:
+    result = service.list_technical_specifications(
         session=session,
         counterparty_id=counterparty_id,
         contract_id=contract_id,
@@ -331,9 +339,16 @@ def list_technical_specifications(
         technical_specification_status=(
             technical_specification_status
         ),
+        search=search,
         include_archived=include_archived,
         limit=limit,
         offset=offset,
+    )
+    return Page[TechnicalSpecificationRead](
+        items=result.items,
+        total=result.total,
+        limit=result.limit,
+        offset=result.offset,
     )
 
 

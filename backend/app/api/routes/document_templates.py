@@ -10,11 +10,13 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
 from app.api.dependencies.auth import (
     AdminUser,
+    CurrentUser,
     get_current_active_user,
 )
 from app.models.document_template import (
@@ -25,6 +27,8 @@ from app.schemas.document_template import (
     DocumentTemplateRead,
     DocumentTemplateUpdate,
 )
+from app.schemas.pagination import Page
+from app.models.user import UserRole
 from app.services import document_templates as service
 
 
@@ -40,6 +44,24 @@ DatabaseSession = Annotated[
     Session,
     Depends(get_db_session),
 ]
+
+
+def ensure_template_is_visible(
+    *,
+    template: DocumentTemplate,
+    current_user: CurrentUser,
+) -> None:
+    if (
+        current_user.role == UserRole.MANAGER.value
+        and (
+            not template.is_active
+            or template.archived_at is not None
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Шаблон документа не найден",
+        )
 
 
 @router.post(
@@ -123,12 +145,20 @@ def create_document_template(
 
 @router.get(
     "",
-    response_model=list[DocumentTemplateRead],
+    response_model=Page[DocumentTemplateRead],
 )
 def list_document_templates(
+    current_user: CurrentUser,
     session: DatabaseSession,
     template_type: DocumentTemplateType | None = None,
     include_archived: bool = False,
+    search: Annotated[
+        str | None,
+        Query(
+            min_length=1,
+            max_length=255,
+        ),
+    ] = None,
     limit: Annotated[
         int,
         Query(ge=1, le=100),
@@ -137,13 +167,26 @@ def list_document_templates(
         int,
         Query(ge=0),
     ] = 0,
-) -> list[DocumentTemplate]:
-    return service.list_document_templates(
+) -> Page[DocumentTemplateRead]:
+    is_manager = (
+        current_user.role == UserRole.MANAGER.value
+    )
+    result = service.list_document_templates(
         session=session,
         template_type=template_type,
-        include_archived=include_archived,
+        include_archived=(
+            include_archived and not is_manager
+        ),
+        only_active=is_manager,
+        search=search,
         limit=limit,
         offset=offset,
+    )
+    return Page[DocumentTemplateRead](
+        items=result.items,
+        total=result.total,
+        limit=result.limit,
+        offset=result.offset,
     )
 
 
@@ -153,18 +196,66 @@ def list_document_templates(
 )
 def get_document_template(
     template_id: int,
+    current_user: CurrentUser,
     session: DatabaseSession,
 ) -> DocumentTemplate:
     try:
-        return service.get_document_template_by_id(
+        template = service.get_document_template_by_id(
             session=session,
             template_id=template_id,
+        )
+        ensure_template_is_visible(
+            template=template,
+            current_user=current_user,
+        )
+        return template
+    except service.DocumentTemplateNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Шаблон документа не найден",
+        )
+
+
+@router.get(
+    "/{template_id}/download",
+    response_class=FileResponse,
+)
+def download_document_template(
+    template_id: int,
+    current_user: CurrentUser,
+    session: DatabaseSession,
+) -> FileResponse:
+    try:
+        template = service.get_document_template_by_id(
+            session=session,
+            template_id=template_id,
+        )
+        ensure_template_is_visible(
+            template=template,
+            current_user=current_user,
+        )
+        template_file = (
+            service.get_document_template_file(
+                session=session,
+                template_id=template_id,
+            )
         )
     except service.DocumentTemplateNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Шаблон документа не найден",
         )
+    except service.DocumentTemplateFileNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Файл шаблона не найден",
+        )
+
+    return FileResponse(
+        path=template_file.path,
+        media_type=service.DOCX_MEDIA_TYPE,
+        filename=template_file.file_name,
+    )
 
 
 @router.patch(

@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     HTTPException,
@@ -20,6 +21,9 @@ from app.api.dependencies.auth import (
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
 from app.models.contract import Contract
+from app.models.contract_analysis import (
+    ContractAnalysisRun,
+)
 from app.models.contract_document_version import (
     ContractDocumentVersion,
 )
@@ -41,8 +45,10 @@ from app.schemas.contract_analysis import (
     ContractAnalysisRunRead,
     ContractAnalysisRunSummaryRead,
 )
+from app.schemas.pagination import Page
 from app.services import (
     contract_analysis_executor,
+    contract_analysis_jobs,
     contract_analysis_runs,
     contract_documents,
 )
@@ -396,9 +402,10 @@ def get_contract_status_history(
             detail="Договор не найден",
         )
 
+
 @router.get(
     "",
-    response_model=list[ContractRead],
+    response_model=Page[ContractRead],
 )
 def list_contracts(
     session: DatabaseSession,
@@ -406,9 +413,16 @@ def list_contracts(
         int | None,
         Query(gt=0),
     ] = None,
-     contract_status: Annotated[
+    contract_status: Annotated[
         ContractStatus | None,
         Query(alias="status"),
+    ] = None,
+    search: Annotated[
+        str | None,
+        Query(
+            min_length=1,
+            max_length=500,
+        ),
     ] = None,
     include_archived: bool = False,
     limit: Annotated[
@@ -419,24 +433,31 @@ def list_contracts(
         int,
         Query(ge=0),
     ] = 0,
-) -> list[Contract]:
-    return service.list_contracts(
+) -> Page[ContractRead]:
+    result = service.list_contracts(
         session=session,
         counterparty_id=counterparty_id,
-                status=(
+        status=(
             contract_status.value
             if contract_status is not None
             else None
         ),
+        search=search,
         include_archived=include_archived,
         limit=limit,
         offset=offset,
+    )
+    return Page[ContractRead](
+        items=result.items,
+        total=result.total,
+        limit=result.limit,
+        offset=result.offset,
     )
 
 
 @router.get(
     "/{contract_id}/versions",
-    response_model=list[ContractDocumentVersionRead],
+    response_model=Page[ContractDocumentVersionRead],
 )
 def get_contract_document_versions(
     contract_id: int,
@@ -449,9 +470,9 @@ def get_contract_document_versions(
         int,
         Query(ge=0),
     ] = 0,
-) -> list[ContractDocumentVersion]:
+) -> Page[ContractDocumentVersionRead]:
     try:
-        return (
+        result = (
             contract_documents
             .list_contract_document_versions(
                 session=session,
@@ -459,6 +480,12 @@ def get_contract_document_versions(
                 limit=limit,
                 offset=offset,
             )
+        )
+        return Page[ContractDocumentVersionRead](
+            items=result.items,
+            total=result.total,
+            limit=result.limit,
+            offset=result.offset,
         )
     except Exception as error:
         raise_contract_document_service_error(error)
@@ -526,7 +553,7 @@ def download_contract_document_version(
         "/analyses"
     ),
     response_model=ContractAnalysisRunRead,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 def create_contract_analysis(
     contract_id: int,
@@ -534,11 +561,12 @@ def create_contract_analysis(
     current_user: CurrentUser,
     session: DatabaseSession,
     execution_context: AnalysisExecutionContext,
-):
+    background_tasks: BackgroundTasks,
+) -> ContractAnalysisRun:
     try:
-        return (
+        analysis_run = (
             contract_analysis_runs
-            .run_contract_analysis(
+            .create_running_analysis(
                 session=session,
                 contract_id=contract_id,
                 version_number=version_number,
@@ -548,6 +576,15 @@ def create_contract_analysis(
                 ),
             )
         )
+        background_tasks.add_task(
+            (
+                contract_analysis_jobs
+                .execute_contract_analysis_job
+            ),
+            analysis_id=analysis_run.id,
+            execution_context=execution_context,
+        )
+        return analysis_run
     except Exception as error:  # noqa: BLE001
         raise_contract_analysis_service_error(
             error
@@ -559,7 +596,7 @@ def create_contract_analysis(
         "/{contract_id}/versions/{version_number}"
         "/analyses"
     ),
-    response_model=list[
+    response_model=Page[
         ContractAnalysisRunSummaryRead
     ],
 )
@@ -575,9 +612,9 @@ def get_contract_analyses(
         int,
         Query(ge=0),
     ] = 0,
-):
+) -> Page[ContractAnalysisRunSummaryRead]:
     try:
-        return (
+        result = (
             contract_analysis_runs
             .list_contract_analysis_runs(
                 session=session,
@@ -586,6 +623,14 @@ def get_contract_analyses(
                 limit=limit,
                 offset=offset,
             )
+        )
+        return Page[
+            ContractAnalysisRunSummaryRead
+        ](
+            items=result.items,
+            total=result.total,
+            limit=result.limit,
+            offset=result.offset,
         )
     except Exception as error:  # noqa: BLE001
         raise_contract_analysis_service_error(
@@ -605,7 +650,7 @@ def get_contract_analysis(
     version_number: Annotated[int, Path(gt=0)],
     analysis_id: Annotated[int, Path(gt=0)],
     session: DatabaseSession,
-):
+) -> ContractAnalysisRun:
     try:
         return (
             contract_analysis_runs

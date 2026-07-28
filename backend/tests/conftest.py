@@ -24,10 +24,46 @@ from app.db.session import (
 )  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.user import User, UserRole  # noqa: E402
+from app.services import (  # noqa: E402
+    contract_analysis_jobs,
+    contract_analysis_runs,
+)
 
 
 TEST_PASSWORD = "Valid-test-password-123"
 TEST_PASSWORD_HASH = hash_password(TEST_PASSWORD)
+
+
+def override_analysis_job_runner(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    session: Session,
+) -> None:
+    def execute_job(
+        *,
+        analysis_id: int,
+        execution_context,
+    ) -> None:
+        try:
+            (
+                contract_analysis_runs
+                .execute_contract_analysis(
+                    session=session,
+                    analysis_id=analysis_id,
+                    execution_context=execution_context,
+                )
+            )
+        except (
+            contract_analysis_runs
+            .ContractAnalysisExecutionFailedError
+        ):
+            return
+
+    monkeypatch.setattr(
+        contract_analysis_jobs,
+        "execute_contract_analysis_job",
+        execute_job,
+    )
 
 
 @pytest.fixture
@@ -56,7 +92,12 @@ def db_session() -> Generator[Session, None, None]:
 @pytest.fixture
 def client(
     db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Generator[TestClient, None, None]:
+    override_analysis_job_runner(
+        monkeypatch=monkeypatch,
+        session=db_session,
+    )
     admin = User(
         username="test-admin",
         full_name="Тестовый администратор",
@@ -95,7 +136,12 @@ def client(
 @pytest.fixture
 def manager_client(
     db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Generator[TestClient, None, None]:
+    override_analysis_job_runner(
+        monkeypatch=monkeypatch,
+        session=db_session,
+    )
     manager = User(
         username="test-manager",
         full_name="Тестовый менеджер",
