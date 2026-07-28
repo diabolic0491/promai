@@ -75,6 +75,37 @@ def build_contract_document_with_deadline_conflict(
     return stream.getvalue()
 
 
+def build_contract_document_with_payment_conflicts(
+) -> bytes:
+    stream = BytesIO()
+    document = Document()
+    document.add_paragraph("ДОГОВОР ПОСТАВКИ")
+    document.add_paragraph(
+        "4.1. Покупатель уплачивает 30% стоимости "
+        "товара в течение 3 банковских дней после "
+        "подписания настоящего Договора."
+    )
+    document.add_paragraph(
+        "4.2. Покупатель уплачивает оставшиеся "
+        "80% стоимости товара в течение 5 "
+        "банковских дней после поставки товара."
+    )
+    document.add_paragraph(
+        "За просрочку оплаты Покупатель уплачивает "
+        "Поставщику пеню в размере 0,10% от "
+        "неоплаченной суммы за каждый день "
+        "просрочки платежа."
+    )
+    document.add_paragraph(
+        "При нарушении срока оплаты Покупатель "
+        "уплачивает Поставщику пеню в размере "
+        "0,15% от неоплаченной суммы за каждый "
+        "день просрочки платежа."
+    )
+    document.save(stream)
+    return stream.getvalue()
+
+
 def create_contract_with_version(
     client: TestClient,
     *,
@@ -452,6 +483,65 @@ def test_deadline_conflict_is_saved_when_executor_misses_it(
     assert (
         "5 рабочих дней и 10 календарных дней"
         in finding["description"]
+    )
+
+
+def test_payment_conflicts_are_saved_when_executor_misses_them(
+    client: TestClient,
+    storage_root: Path,
+) -> None:
+    del storage_root
+    contract, _version = create_contract_with_version(
+        client,
+        unp="910000014",
+        document_content=(
+            build_contract_document_with_payment_conflicts()
+        ),
+    )
+    configure_executor({"findings": []})
+
+    response = client.post(
+        (
+            f"/contracts/{contract['id']}"
+            "/versions/1/analyses"
+        )
+    )
+
+    assert response.status_code == 201
+    result = response.json()
+    assert result["status"] == "completed"
+    assert len(result["findings"]) == 2
+    assert tuple(
+        finding["title"]
+        for finding in result["findings"]
+    ) == (
+        "Несогласованность долей оплаты",
+        "Несогласованность формулы расчёта пени",
+    )
+    assert all(
+        finding["severity_level"] == "medium"
+        for finding in result["findings"]
+    )
+    payment_finding = result["findings"][0]
+    assert len(
+        payment_finding["evidence_references"]
+    ) == 2
+    assert tuple(
+        reference["quote"]
+        for reference
+        in payment_finding["evidence_references"]
+    ) == (
+        (
+            "4.1. Покупатель уплачивает 30% "
+            "стоимости товара в течение 3 "
+            "банковских дней после подписания "
+            "настоящего Договора."
+        ),
+        (
+            "4.2. Покупатель уплачивает оставшиеся "
+            "80% стоимости товара в течение 5 "
+            "банковских дней после поставки товара."
+        ),
     )
 
 

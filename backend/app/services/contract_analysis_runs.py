@@ -22,6 +22,7 @@ from app.services import (
     contract_analysis_executor,
     contract_analysis_findings,
     contract_analysis_input,
+    contract_analysis_payments,
     contract_analysis_semantics,
     contract_documents,
 )
@@ -445,7 +446,7 @@ def run_contract_analysis(
                 policy=execution_context.policy,
             )
         )
-        final_finding_drafts = (
+        deadline_merged_finding_drafts = (
             contract_analysis_deadlines
             .merge_deadline_findings(
                 model_findings=(
@@ -453,6 +454,25 @@ def run_contract_analysis(
                 ),
                 deterministic_findings=(
                     deterministic_deadline_findings
+                ),
+            )
+        )
+        deterministic_payment_penalty_findings = (
+            contract_analysis_payments
+            .build_deterministic_payment_penalty_findings(
+                evidence_index=evidence_index,
+                policy=execution_context.policy,
+            )
+        )
+        final_finding_drafts = (
+            contract_analysis_payments
+            .merge_payment_penalty_findings(
+                evidence_index=evidence_index,
+                model_findings=(
+                    deadline_merged_finding_drafts
+                ),
+                deterministic_findings=(
+                    deterministic_payment_penalty_findings
                 ),
             )
         )
