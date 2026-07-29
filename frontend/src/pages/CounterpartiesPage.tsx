@@ -1,340 +1,665 @@
 import {
-  useCallback,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import {
+  Archive,
+  ArrowLeft,
+  ArrowRight,
+  Building2,
+  Eye,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Search,
+  X,
+} from "lucide-react";
+import {
   useEffect,
   useState,
   type FormEvent,
 } from "react";
+import {
+  Link,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 
-import { getCounterparties } from "../api/counterparties";
-import { CounterpartyDetailsDrawer } from
-  "../components/counterparties/CounterpartyDetailsDrawer";
-import { CreateCounterpartyModal } from
-  "../components/counterparties/CreateCounterpartyModal";
-import type { Counterparty } from "../types/counterparty";
+import {
+  archiveCounterparty,
+  createCounterparty,
+  getCounterparties,
+  restoreCounterparty,
+  updateCounterparty,
+} from "../api/counterparties";
+import {
+  CounterpartyFormDialog,
+  type CounterpartyFormValues,
+} from
+  "../components/counterparties/CounterpartyFormDialog";
+import { ConfirmDialog } from
+  "../components/ui/ConfirmDialog";
+import type {
+  Counterparty,
+} from "../types/counterparty";
+import { formatDateTime } from
+  "../utils/formatters";
+import "../styles/records.css";
+
+const PAGE_SIZE = 20;
+
+function readOffset(value: string | null): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0
+    ? parsed
+    : 0;
+}
 
 export function CounterpartiesPage() {
-  const [counterparties, setCounterparties] = useState<
-    Counterparty[]
-  >([]);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] =
+    useSearchParams();
 
-  const [
-    selectedCounterparty,
-    setSelectedCounterparty,
-  ] = useState<Counterparty | null>(null);
+  const search = searchParams.get("search") ?? "";
+  const includeArchived =
+    searchParams.get("archived") === "true";
+  const offset = readOffset(
+    searchParams.get("offset"),
+  );
 
-  const [isCreateModalOpen, setIsCreateModalOpen] =
+  const [searchInput, setSearchInput] =
+    useState(search);
+  const [isCreateOpen, setIsCreateOpen] =
     useState(false);
-
-  const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
-
-  const [includeArchived, setIncludeArchived] =
-    useState(false);
-
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadCounterparties = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const result = await getCounterparties({
-        search,
-        includeArchived,
-        limit: 100,
-      });
-
-      setCounterparties(result);
-    } catch (requestError) {
-      const message =
-        requestError instanceof Error
-          ? requestError.message
-          : "Не удалось загрузить контрагентов";
-
-      setError(message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [search, includeArchived]);
+  const [editingCounterparty, setEditingCounterparty] =
+    useState<Counterparty | null>(null);
+  const [statusTarget, setStatusTarget] =
+    useState<Counterparty | null>(null);
 
   useEffect(() => {
-    void loadCounterparties();
-  }, [loadCounterparties]);
+    setSearchInput(search);
+  }, [search]);
 
-  function handleSearchSubmit(
+  const counterpartiesQuery = useQuery({
+    queryKey: [
+      "counterparties",
+      {
+        search,
+        includeArchived,
+        limit: PAGE_SIZE,
+        offset,
+      },
+    ],
+    queryFn: () =>
+      getCounterparties({
+        search,
+        includeArchived,
+        limit: PAGE_SIZE,
+        offset,
+      }),
+    placeholderData: (previous) => previous,
+  });
+
+  useEffect(() => {
+    const total = counterpartiesQuery.data?.total;
+
+    if (
+      total !== undefined &&
+      offset > 0 &&
+      offset >= total
+    ) {
+      const lastOffset = Math.max(
+        0,
+        Math.floor(Math.max(0, total - 1) / PAGE_SIZE) *
+          PAGE_SIZE,
+      );
+      const next = new URLSearchParams(searchParams);
+
+      if (lastOffset > 0) {
+        next.set("offset", String(lastOffset));
+      } else {
+        next.delete("offset");
+      }
+
+      setSearchParams(next, { replace: true });
+    }
+  }, [
+    counterpartiesQuery.data?.total,
+    offset,
+    searchParams,
+    setSearchParams,
+  ]);
+
+  const statusMutation = useMutation({
+    mutationFn: (counterparty: Counterparty) =>
+      counterparty.status === "archived"
+        ? restoreCounterparty(counterparty.id)
+        : archiveCounterparty(counterparty.id),
+    onSuccess: async () => {
+      setStatusTarget(null);
+      await queryClient.invalidateQueries({
+        queryKey: ["counterparties"],
+      });
+    },
+  });
+
+  function updateFilters(
+    updates: Record<string, string | null>,
+  ) {
+    const next = new URLSearchParams(searchParams);
+
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value) {
+        next.set(key, value);
+      } else {
+        next.delete(key);
+      }
+    });
+
+    setSearchParams(next);
+  }
+
+  function submitSearch(
     event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
-    setSearch(searchInput.trim());
-  }
-
-  function resetSearch() {
-    setSearchInput("");
-    setSearch("");
-  }
-
-  function handleCounterpartyChanged(
-    changedCounterparty: Counterparty,
-  ) {
-    const shouldRemoveFromCurrentList =
-      changedCounterparty.status === "archived" &&
-      !includeArchived;
-
-    if (shouldRemoveFromCurrentList) {
-      setSelectedCounterparty(null);
-    } else {
-      setSelectedCounterparty(changedCounterparty);
-    }
-
-    setCounterparties((current) => {
-      if (shouldRemoveFromCurrentList) {
-        return current.filter(
-          (item) =>
-            item.id !== changedCounterparty.id,
-        );
-      }
-
-      const existsInCurrentList = current.some(
-        (item) =>
-          item.id === changedCounterparty.id,
-      );
-
-      if (!existsInCurrentList) {
-        return [
-          changedCounterparty,
-          ...current,
-        ];
-      }
-
-      return current.map((item) =>
-        item.id === changedCounterparty.id
-          ? changedCounterparty
-          : item,
-      );
+    updateFilters({
+      search: searchInput.trim() || null,
+      offset: null,
     });
   }
 
+  async function create(
+    values: CounterpartyFormValues,
+  ) {
+    const created = await createCounterparty({
+      unp: values.unp.trim(),
+      name: values.name.trim(),
+      short_name: values.shortName.trim() || null,
+      legal_address:
+        values.legalAddress.trim() || null,
+    });
+
+    setIsCreateOpen(false);
+    await queryClient.invalidateQueries({
+      queryKey: ["counterparties"],
+    });
+    navigate(`/counterparties/${created.id}`);
+  }
+
+  async function update(
+    values: CounterpartyFormValues,
+  ) {
+    if (!editingCounterparty) {
+      return;
+    }
+
+    const updated = await updateCounterparty(
+      editingCounterparty.id,
+      {
+        name: values.name.trim(),
+        short_name: values.shortName.trim() || null,
+        legal_address:
+          values.legalAddress.trim() || null,
+      },
+    );
+
+    setEditingCounterparty(null);
+    queryClient.setQueryData(
+      ["counterparty", updated.id],
+      updated,
+    );
+    await queryClient.invalidateQueries({
+      queryKey: ["counterparties"],
+    });
+  }
+
+  const page = counterpartiesQuery.data;
+  const currentPage =
+    Math.floor((page?.offset ?? offset) / PAGE_SIZE) +
+    1;
+  const pageCount = Math.max(
+    1,
+    Math.ceil((page?.total ?? 0) / PAGE_SIZE),
+  );
+  const hasPrevious = offset > 0;
+  const hasNext = page
+    ? page.offset + page.items.length < page.total
+    : false;
+
   return (
     <section className="page">
-      <div className="pageHeader">
+      <div className="page-heading">
         <div>
-          <p className="pageEyebrow">Справочник</p>
-
+          <span className="page-eyebrow">
+            Справочник
+          </span>
           <h1>Контрагенты</h1>
-
           <p>
-            Компании и организации, с которыми работает
-            предприятие.
+            Предприятия и организации, связанные с
+            договорами и техническими заданиями.
           </p>
         </div>
 
         <button
           type="button"
-          className="primaryButton"
-          onClick={() => setIsCreateModalOpen(true)}
+          className="button button--primary"
+          onClick={() => setIsCreateOpen(true)}
         >
-          + Новый контрагент
+          <Plus size={18} aria-hidden="true" />
+          Добавить контрагента
         </button>
       </div>
 
-      <div className="tablePanel">
-        <div className="tableToolbar">
-          <form
-            className="searchForm"
-            onSubmit={handleSearchSubmit}
-          >
-            <input
-              type="search"
-              value={searchInput}
-              onChange={(event) =>
-                setSearchInput(event.target.value)
-              }
-              placeholder="Поиск по названию или УНП"
-              aria-label="Поиск контрагентов"
-            />
+      <section
+        className="records-panel"
+        aria-labelledby="counterparties-table-title"
+      >
+        <div className="records-toolbar">
+          <div>
+            <h2 id="counterparties-table-title">
+              Реестр
+            </h2>
+            <span>
+              {page
+                ? `Найдено: ${page.total}`
+                : "Загружаем данные…"}
+            </span>
+          </div>
 
-            <button
-              type="submit"
-              className="secondaryButton"
+          <div className="records-toolbar__controls">
+            <form
+              className="records-search"
+              role="search"
+              onSubmit={submitSearch}
             >
-              Найти
-            </button>
-
-            {search && (
+              <Search size={18} aria-hidden="true" />
+              <input
+                type="search"
+                value={searchInput}
+                onChange={(event) =>
+                  setSearchInput(event.target.value)
+                }
+                placeholder="Название или УНП"
+                aria-label="Поиск контрагентов"
+                maxLength={500}
+              />
+              {searchInput && (
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={() => {
+                    setSearchInput("");
+                    updateFilters({
+                      search: null,
+                      offset: null,
+                    });
+                  }}
+                  aria-label="Очистить поиск"
+                >
+                  <X size={17} aria-hidden="true" />
+                </button>
+              )}
               <button
-                type="button"
-                className="textButton"
-                onClick={resetSearch}
+                type="submit"
+                className="button button--secondary"
               >
-                Сбросить
+                Найти
               </button>
-            )}
-          </form>
+            </form>
 
-          <label className="archiveFilter">
-            <input
-              type="checkbox"
-              checked={includeArchived}
-              onChange={(event) =>
-                setIncludeArchived(event.target.checked)
-              }
-            />
-
-            <span>Показывать архивные</span>
-          </label>
+            <label className="records-toggle">
+              <input
+                type="checkbox"
+                checked={includeArchived}
+                onChange={(event) =>
+                  updateFilters({
+                    archived: event.target.checked
+                      ? "true"
+                      : null,
+                    offset: null,
+                  })
+                }
+              />
+              <span aria-hidden="true" />
+              Показывать архивные
+            </label>
+          </div>
         </div>
 
-        {isLoading && (
-          <div className="tableState">
-            <span className="loader" />
-            <span>Загружаем контрагентов…</span>
+        {counterpartiesQuery.isLoading && (
+          <div
+            className="records-state"
+            role="status"
+          >
+            <span className="loading-spinner" />
+            <strong>Загружаем контрагентов</strong>
+            <span>Получаем актуальные данные API…</span>
           </div>
         )}
 
-        {!isLoading && error && (
-          <div className="errorState">
-            <div>
-              <strong>Не удалось получить данные</strong>
-              <span>{error}</span>
-            </div>
-
+        {counterpartiesQuery.isError && (
+          <div className="records-state records-state--error">
+            <Building2 size={28} aria-hidden="true" />
+            <strong>
+              Не удалось загрузить контрагентов
+            </strong>
+            <span>
+              {counterpartiesQuery.error instanceof Error
+                ? counterpartiesQuery.error.message
+                : "Повторите запрос"}
+            </span>
             <button
               type="button"
-              className="secondaryButton"
-              onClick={() => void loadCounterparties()}
+              className="button button--secondary"
+              onClick={() => {
+                void counterpartiesQuery.refetch();
+              }}
             >
               Повторить
             </button>
           </div>
         )}
 
-        {!isLoading &&
-          !error &&
-          counterparties.length === 0 && (
-            <div className="tableState">
-              <strong>Контрагенты не найдены</strong>
-
+        {page &&
+          !counterpartiesQuery.isError &&
+          page.items.length === 0 && (
+            <div className="records-state">
+              <Building2 size={28} aria-hidden="true" />
+              <strong>
+                {search
+                  ? "По вашему запросу ничего не найдено"
+                  : "Контрагентов пока нет"}
+              </strong>
               <span>
-                Добавьте первого контрагента или измените
-                условия поиска.
+                {search
+                  ? "Измените запрос или сбросьте фильтры."
+                  : "Добавьте первую организацию в справочник."}
               </span>
+              {!search && (
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={() => setIsCreateOpen(true)}
+                >
+                  <Plus size={18} aria-hidden="true" />
+                  Добавить
+                </button>
+              )}
             </div>
           )}
 
-        {!isLoading &&
-          !error &&
-          counterparties.length > 0 && (
-            <>
-              <div className="tableSummary">
-                Найдено:{" "}
-                <strong>{counterparties.length}</strong>
-              </div>
-
-              <div className="tableContainer">
-                <table className="dataTable">
-                  <thead>
-                    <tr>
-                      <th>Контрагент</th>
-                      <th>УНП</th>
-                      <th>Юридический адрес</th>
-                      <th>Статус</th>
-                      <th aria-label="Действия" />
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {counterparties.map((counterparty) => (
-                      <tr key={counterparty.id}>
-                        <td>
-                          <div className="companyCell">
-                            <span className="companyAvatar">
-                              {counterparty.name
-                                .charAt(0)
-                                .toUpperCase()}
-                            </span>
-
-                            <div>
-                              <strong>
-                                {counterparty.short_name ||
-                                  counterparty.name}
-                              </strong>
-
-                              {counterparty.short_name && (
-                                <span>
-                                  {counterparty.name}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-
-                        <td className="unpCell">
+        {page && page.items.length > 0 && (
+          <>
+            <div className="records-table-wrap">
+              <table className="records-table">
+                <thead>
+                  <tr>
+                    <th scope="col">УНП</th>
+                    <th scope="col">Наименование</th>
+                    <th scope="col">Адрес</th>
+                    <th scope="col">Состояние</th>
+                    <th scope="col">Обновлён</th>
+                    <th scope="col">
+                      <span className="sr-only">
+                        Действия
+                      </span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {page.items.map((counterparty) => (
+                    <tr key={counterparty.id}>
+                      <td>
+                        <span className="records-table__unp">
                           {counterparty.unp}
-                        </td>
-
-                        <td>
-                          {counterparty.legal_address || "—"}
-                        </td>
-
-                        <td>
-                          <span
-                            className={`statusBadge ${
-                              counterparty.status === "active"
-                                ? "statusBadgeActive"
-                                : "statusBadgeArchived"
-                            }`}
-                          >
-                            {counterparty.status === "active"
-                              ? "Активен"
-                              : "В архиве"}
+                        </span>
+                      </td>
+                      <td>
+                        <Link
+                          to={`/counterparties/${counterparty.id}`}
+                          className="records-table__primary"
+                        >
+                          {counterparty.short_name ||
+                            counterparty.name}
+                        </Link>
+                        {counterparty.short_name && (
+                          <span className="records-table__secondary">
+                            {counterparty.name}
                           </span>
-                        </td>
-
-                        <td className="actionsCell">
+                        )}
+                      </td>
+                      <td>
+                        {counterparty.legal_address ||
+                          "—"}
+                      </td>
+                      <td>
+                        <span
+                          className={
+                            counterparty.status ===
+                            "archived"
+                              ? "status-badge status-badge--muted"
+                              : "status-badge status-badge--active"
+                          }
+                        >
+                          {counterparty.status ===
+                          "archived"
+                            ? "В архиве"
+                            : "Активен"}
+                        </span>
+                      </td>
+                      <td>
+                        {formatDateTime(
+                          counterparty.updated_at,
+                        )}
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          <Link
+                            to={`/counterparties/${counterparty.id}`}
+                            className="icon-button"
+                            aria-label={`Открыть ${counterparty.name}`}
+                            title="Открыть"
+                          >
+                            <Eye
+                              size={17}
+                              aria-hidden="true"
+                            />
+                          </Link>
                           <button
                             type="button"
-                            className="rowAction"
-                            aria-label={
-                              `Открыть ${counterparty.name}`
-                            }
-                            title="Открыть карточку"
+                            className="icon-button"
                             onClick={() =>
-                              setSelectedCounterparty(
+                              setEditingCounterparty(
                                 counterparty,
                               )
                             }
+                            disabled={
+                              counterparty.status ===
+                              "archived"
+                            }
+                            aria-label={`Изменить ${counterparty.name}`}
+                            title={
+                              counterparty.status ===
+                              "archived"
+                                ? "Сначала восстановите контрагента"
+                                : "Изменить"
+                            }
                           >
-                            →
+                            <Pencil
+                              size={17}
+                              aria-hidden="true"
+                            />
                           </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          <button
+                            type="button"
+                            className={
+                              counterparty.status ===
+                              "archived"
+                                ? "icon-button"
+                                : "icon-button icon-button--danger"
+                            }
+                            onClick={() =>
+                              setStatusTarget(
+                                counterparty,
+                              )
+                            }
+                            aria-label={
+                              counterparty.status ===
+                              "archived"
+                                ? `Восстановить ${counterparty.name}`
+                                : `Архивировать ${counterparty.name}`
+                            }
+                            title={
+                              counterparty.status ===
+                              "archived"
+                                ? "Восстановить"
+                                : "Архивировать"
+                            }
+                          >
+                            {counterparty.status ===
+                            "archived" ? (
+                              <RotateCcw
+                                size={17}
+                                aria-hidden="true"
+                              />
+                            ) : (
+                              <Archive
+                                size={17}
+                                aria-hidden="true"
+                              />
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="records-pagination">
+              <span>
+                Страница {currentPage} из {pageCount}
+              </span>
+              <div>
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  disabled={!hasPrevious}
+                  onClick={() =>
+                    updateFilters({
+                      offset: String(
+                        Math.max(0, offset - PAGE_SIZE),
+                      ),
+                    })
+                  }
+                >
+                  <ArrowLeft
+                    size={17}
+                    aria-hidden="true"
+                  />
+                  Назад
+                </button>
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  disabled={!hasNext}
+                  onClick={() =>
+                    updateFilters({
+                      offset: String(offset + PAGE_SIZE),
+                    })
+                  }
+                >
+                  Далее
+                  <ArrowRight
+                    size={17}
+                    aria-hidden="true"
+                  />
+                </button>
               </div>
-            </>
+            </div>
+          </>
+        )}
+
+        {counterpartiesQuery.isFetching &&
+          !counterpartiesQuery.isLoading && (
+            <span
+              className="records-refreshing"
+              role="status"
+            >
+              Обновляем…
+            </span>
           )}
-      </div>
+      </section>
 
-      <CreateCounterpartyModal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        onCreated={(createdCounterparty) => {
-          setIsCreateModalOpen(false);
+      {isCreateOpen && (
+        <CounterpartyFormDialog
+          mode="create"
+          onClose={() => setIsCreateOpen(false)}
+          onSubmit={create}
+        />
+      )}
 
-          setCounterparties((current) => [
-            createdCounterparty,
-            ...current,
-          ]);
+      {editingCounterparty && (
+        <CounterpartyFormDialog
+          mode="edit"
+          counterparty={editingCounterparty}
+          onClose={() =>
+            setEditingCounterparty(null)
+          }
+          onSubmit={update}
+        />
+      )}
+
+      <ConfirmDialog
+        isOpen={Boolean(statusTarget)}
+        title={
+          statusTarget?.status === "archived"
+            ? "Восстановить контрагента?"
+            : "Архивировать контрагента?"
+        }
+        description={
+          statusTarget?.status === "archived"
+            ? "Карточка снова станет доступна для редактирования и создания связанных документов."
+            : "Контрагент исчезнет из списка активных. Его данные и связанные документы сохранятся."
+        }
+        confirmLabel={
+          statusTarget?.status === "archived"
+            ? "Восстановить"
+            : "Архивировать"
+        }
+        tone={
+          statusTarget?.status === "archived"
+            ? "primary"
+            : "danger"
+        }
+        isPending={statusMutation.isPending}
+        onCancel={() => {
+          if (!statusMutation.isPending) {
+            setStatusTarget(null);
+            statusMutation.reset();
+          }
+        }}
+        onConfirm={() => {
+          if (statusTarget) {
+            statusMutation.mutate(statusTarget);
+          }
         }}
       />
 
-      <CounterpartyDetailsDrawer
-        counterparty={selectedCounterparty}
-        onClose={() => setSelectedCounterparty(null)}
-        onChanged={handleCounterpartyChanged}
-      />
+      {statusMutation.isError && (
+        <div
+          className="toast toast--error"
+          role="alert"
+        >
+          {statusMutation.error instanceof Error
+            ? statusMutation.error.message
+            : "Не удалось изменить состояние"}
+        </div>
+      )}
     </section>
   );
 }

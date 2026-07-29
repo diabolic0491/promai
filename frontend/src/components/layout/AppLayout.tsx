@@ -1,244 +1,406 @@
 import {
+  Building2,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  FileStack,
+  FileText,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  UserCog,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  useEffect,
+  useRef,
   useState,
-  type ReactNode,
 } from "react";
+import {
+  Link,
+  NavLink,
+  Outlet,
+  useLocation,
+} from "react-router-dom";
 
-import type { AppPage } from "../../types/navigation";
-
+import { useAuth } from
+  "../../features/auth/useAuth";
+import { BrandMark } from "../ui/BrandMark";
 import "./AppLayout.css";
 
-
-interface AppLayoutProps {
-  currentPage: AppPage;
-  onPageChange: (page: AppPage) => void;
-  children: ReactNode;
-}
-
-
 interface NavigationItem {
-  id: AppPage;
   label: string;
-  icon: string;
+  path: string;
+  icon: LucideIcon;
 }
-
 
 const navigationItems: NavigationItem[] = [
   {
-    id: "dashboard",
-    label: "Главная",
-    icon: "⌂",
+    label: "Обзор",
+    path: "/dashboard",
+    icon: LayoutDashboard,
   },
   {
-    id: "organization",
-    label: "Наша компания",
-    icon: "▣",
-  },
-  {
-    id: "counterparties",
     label: "Контрагенты",
-    icon: "▦",
+    path: "/counterparties",
+    icon: Building2,
   },
   {
-    id: "contracts",
     label: "Договоры",
-    icon: "▤",
+    path: "/contracts",
+    icon: FileText,
+  },
+  {
+    label: "Технические задания",
+    path: "/technical-specifications",
+    icon: ClipboardList,
+  },
+  {
+    label: "Шаблоны",
+    path: "/templates",
+    icon: FileStack,
+  },
+  {
+    label: "Организация",
+    path: "/organization",
+    icon: Building2,
   },
 ];
 
+function getPageTitle(pathname: string): string {
+  if (pathname === "/dashboard") {
+    return "Обзор";
+  }
 
-const pageTitles: Record<AppPage, string> = {
-  dashboard: "Главная",
-  organization: "Наша компания",
-  counterparties: "Контрагенты",
-  contracts: "Договоры",
-};
+  if (pathname.startsWith("/counterparties")) {
+    return pathname === "/counterparties"
+      ? "Контрагенты"
+      : "Карточка контрагента";
+  }
 
+  if (pathname.startsWith("/contracts")) {
+    if (pathname === "/contracts/new") {
+      return "Создание договора";
+    }
+    if (pathname.endsWith("/edit")) {
+      return "Редактирование договора";
+    }
+    return pathname === "/contracts"
+      ? "Договоры"
+      : "Карточка договора";
+  }
 
-export function AppLayout({
-  currentPage,
-  onPageChange,
-  children,
-}: AppLayoutProps) {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] =
+  if (
+    pathname.startsWith("/technical-specifications")
+  ) {
+    if (
+      pathname === "/technical-specifications/new"
+    ) {
+      return "Создание ТЗ";
+    }
+    if (pathname.endsWith("/edit")) {
+      return "Редактирование ТЗ";
+    }
+    return pathname === "/technical-specifications"
+      ? "Технические задания"
+      : "Карточка ТЗ";
+  }
+
+  if (pathname === "/templates") {
+    return "Шаблоны";
+  }
+
+  if (pathname === "/organization") {
+    return "Организация";
+  }
+
+  if (pathname === "/administration/users") {
+    return "Пользователи";
+  }
+
+  if (pathname === "/forbidden") {
+    return "Нет доступа";
+  }
+
+  return "PromAI";
+}
+
+export function AppLayout() {
+  const { user, logout } = useAuth();
+  const location = useLocation();
+  const profileRef = useRef<HTMLDivElement>(null);
+  const [isCollapsed, setIsCollapsed] =
+    useState(false);
+  const [isMobileOpen, setIsMobileOpen] =
+    useState(false);
+  const [isProfileOpen, setIsProfileOpen] =
+    useState(false);
+  const [isLoggingOut, setIsLoggingOut] =
     useState(false);
 
-  function toggleSidebar() {
-    setIsSidebarCollapsed((current) => !current);
+  const pageTitle = getPageTitle(location.pathname);
+  const displayName =
+    user?.full_name || user?.username || "Пользователь";
+  const initials = displayName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+
+  useEffect(() => {
+    setIsMobileOpen(false);
+    setIsProfileOpen(false);
+    document.title = `${pageTitle} — PromAI`;
+  }, [location.pathname, pageTitle]);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (
+        profileRef.current &&
+        !profileRef.current.contains(
+          event.target as Node,
+        )
+      ) {
+        setIsProfileOpen(false);
+      }
+    }
+
+    document.addEventListener(
+      "mousedown",
+      handlePointerDown,
+    );
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handlePointerDown,
+      );
+    };
+  }, []);
+
+  async function handleLogout() {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+    } finally {
+      setIsLoggingOut(false);
+    }
   }
 
   return (
     <div
       className={
-        isSidebarCollapsed
-          ? "appShell appShellCollapsed"
-          : "appShell"
+        isCollapsed
+          ? "app-shell app-shell--collapsed"
+          : "app-shell"
       }
     >
-      <aside
+      <button
+        type="button"
         className={
-          isSidebarCollapsed
-            ? "sidebar sidebarCollapsed"
-            : "sidebar"
+          isMobileOpen
+            ? "sidebar-scrim sidebar-scrim--visible"
+            : "sidebar-scrim"
         }
+        onClick={() => setIsMobileOpen(false)}
+        aria-label="Закрыть меню"
+      />
+
+      <aside
+        className={[
+          "sidebar",
+          isCollapsed ? "sidebar--collapsed" : "",
+          isMobileOpen ? "sidebar--mobile-open" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
       >
-        <div className="sidebarGlow" />
+        <div className="sidebar__brand">
+          <BrandMark compact={isCollapsed} />
 
-        <div className="brand">
-          {!isSidebarCollapsed && (
-            <>
-              <img
-                className="brandLogo"
-                src="/branding/promai-logo.svg"
-                alt="PromAI"
-              />
-
-              <span className="brandSubtitle">
-                Корпоративная CRM-система
-              </span>
-            </>
-          )}
-
-          {isSidebarCollapsed && (
-            <div
-              className="collapsedBrand"
-              title="PromAI"
-              aria-label="PromAI"
-            >
-              AI
-            </div>
-          )}
+          <button
+            type="button"
+            className="sidebar__mobile-close"
+            onClick={() => setIsMobileOpen(false)}
+            aria-label="Закрыть меню"
+          >
+            <X size={20} aria-hidden="true" />
+          </button>
         </div>
 
-        <button
-          type="button"
-          className="sidebarToggle"
-          onClick={toggleSidebar}
-          aria-label={
-            isSidebarCollapsed
-              ? "Развернуть боковую панель"
-              : "Свернуть боковую панель"
-          }
-          title={
-            isSidebarCollapsed
-              ? "Развернуть меню"
-              : "Свернуть меню"
-          }
-        >
-          {isSidebarCollapsed ? "›" : "‹"}
-        </button>
-
         <nav
-          className="nav"
+          className="sidebar__nav"
           aria-label="Основная навигация"
         >
-          {!isSidebarCollapsed && (
-            <span className="navLabel">
-              Навигация
-            </span>
-          )}
-
           {navigationItems.map((item) => {
-            const isActive =
-              currentPage === item.id;
+            const Icon = item.icon;
 
             return (
-              <button
-                key={item.id}
-                type="button"
-                className={
+              <NavLink
+                key={item.path}
+                to={item.path}
+                end={item.path === "/dashboard"}
+                className={({ isActive }) =>
                   isActive
-                    ? "navItem navItemActive"
-                    : "navItem"
-                }
-                onClick={() => onPageChange(item.id)}
-                aria-current={
-                  isActive ? "page" : undefined
+                    ? "sidebar__link sidebar__link--active"
+                    : "sidebar__link"
                 }
                 title={
-                  isSidebarCollapsed
-                    ? item.label
-                    : undefined
+                  isCollapsed ? item.label : undefined
                 }
               >
-                <span
-                  className="navIcon"
-                  aria-hidden="true"
-                >
-                  {item.icon}
+                <span className="sidebar__icon">
+                  <Icon size={19} aria-hidden="true" />
                 </span>
-
-                {!isSidebarCollapsed && (
-                  <span className="navItemText">
-                    {item.label}
-                  </span>
-                )}
-              </button>
+                <span className="sidebar__label">
+                  {item.label}
+                </span>
+              </NavLink>
             );
           })}
         </nav>
 
-        {!isSidebarCollapsed && (
-          <div className="sidebarFooter">
-            <span className="sidebarFooterLabel">
-              Рабочая область
-            </span>
+        <div className="sidebar__footer">
+          <span
+            className="sidebar__status-dot"
+            aria-hidden="true"
+          />
+          <span className="sidebar__footer-text">
+            Система доступна
+          </span>
+        </div>
 
-            <strong>
-              ООО «Промас Инжиниринг»
-            </strong>
-
-            <span className="sidebarStatus">
-              <span
-                className="sidebarStatusDot"
-                aria-hidden="true"
-              />
-
-              Система активна
-            </span>
-          </div>
-        )}
+        <button
+          type="button"
+          className="sidebar__collapse"
+          onClick={() =>
+            setIsCollapsed((current) => !current)
+          }
+          aria-label={
+            isCollapsed
+              ? "Развернуть боковую панель"
+              : "Свернуть боковую панель"
+          }
+        >
+          {isCollapsed ? (
+            <PanelLeftOpen size={18} />
+          ) : (
+            <>
+              <PanelLeftClose size={18} />
+              <span>Свернуть</span>
+            </>
+          )}
+        </button>
       </aside>
 
-      <div className="workspace">
+      <div className="app-workspace">
         <header className="topbar">
-          <div className="topbarPage">
+          <div className="topbar__page">
             <button
               type="button"
-              className="mobileSidebarToggle"
-              onClick={toggleSidebar}
-              aria-label="Открыть или закрыть меню"
+              className="topbar__mobile-menu"
+              onClick={() => setIsMobileOpen(true)}
+              aria-label="Открыть меню"
             >
-              ☰
+              <Menu size={22} aria-hidden="true" />
             </button>
 
             <div>
-              <span className="topbarLabel">
-                PromAI
+              <span className="topbar__eyebrow">
+                Рабочая область
               </span>
-
-              <strong className="topbarTitle">
-                {pageTitles[currentPage]}
+              <strong className="topbar__title">
+                {pageTitle}
               </strong>
             </div>
           </div>
 
-          <div className="topbarRight">
-            <span className="pilotBadge">
-              Пилотная версия
-            </span>
-
-            <div
-              className="userAvatar"
-              title="ООО «Промас Инжиниринг»"
-              aria-label="ООО «Промас Инжиниринг»"
+          <div
+            className="profile-menu"
+            ref={profileRef}
+          >
+            <button
+              type="button"
+              className="profile-menu__trigger"
+              onClick={() =>
+                setIsProfileOpen(
+                  (current) => !current,
+                )
+              }
+              aria-expanded={isProfileOpen}
+              aria-haspopup="menu"
             >
-              ПИ
-            </div>
+              <span className="profile-menu__avatar">
+                {initials || "П"}
+              </span>
+              <span className="profile-menu__identity">
+                <strong>{displayName}</strong>
+                <span>
+                  {user?.role === "admin"
+                    ? "Администратор"
+                    : "Менеджер"}
+                </span>
+              </span>
+              <ChevronDown
+                size={17}
+                aria-hidden="true"
+              />
+            </button>
+
+            {isProfileOpen && (
+              <div
+                className="profile-menu__dropdown"
+                role="menu"
+              >
+                <div className="profile-menu__summary">
+                  <strong>{displayName}</strong>
+                  <span>@{user?.username}</span>
+                </div>
+
+                {user?.role === "admin" && (
+                  <Link
+                    to="/administration/users"
+                    className="profile-menu__item"
+                    role="menuitem"
+                  >
+                    <UserCog
+                      size={18}
+                      aria-hidden="true"
+                    />
+                    Управление пользователями
+                    <ChevronRight
+                      size={16}
+                      aria-hidden="true"
+                    />
+                  </Link>
+                )}
+
+                <button
+                  type="button"
+                  className="profile-menu__item profile-menu__item--danger"
+                  onClick={() => void handleLogout()}
+                  disabled={isLoggingOut}
+                  role="menuitem"
+                >
+                  <LogOut
+                    size={18}
+                    aria-hidden="true"
+                  />
+                  {isLoggingOut
+                    ? "Выходим…"
+                    : "Выйти"}
+                </button>
+              </div>
+            )}
           </div>
         </header>
 
-        <main className="mainContent">
-          {children}
+        <main className="app-content">
+          <Outlet />
         </main>
       </div>
     </div>
