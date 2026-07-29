@@ -11,6 +11,7 @@ export interface UpdateOrganizationProfilePayload {
   email?: string | null;
   phone?: string | null;
   director_name?: string | null;
+  director_position?: string | null;
   bank_name?: string | null;
   bank_account?: string | null;
   bank_code?: string | null;
@@ -30,7 +31,7 @@ export async function updateOrganizationProfile(
     "/organization-profile",
     {
       method: "PATCH",
-      body: JSON.stringify(payload),
+      json: payload,
     },
   );
 }

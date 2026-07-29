@@ -1,36 +1,116 @@
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  useCallback,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import {
+  Building2,
+  CheckCircle2,
+  Landmark,
+  Pencil,
+  Save,
+  ShieldCheck,
+  UserRound,
+  X,
+} from "lucide-react";
+import {
   useEffect,
   useState,
-  type FormEvent,
+  type ReactNode,
 } from "react";
+import { useForm } from "react-hook-form";
+import { useBlocker } from "react-router-dom";
+import { z } from "zod";
 
 import {
   getOrganizationProfile,
   updateOrganizationProfile,
-  type UpdateOrganizationProfilePayload,
 } from "../api/organizationProfile";
-import { ApiError } from "../api/client";
+import { useAuth } from
+  "../features/auth/useAuth";
+import type {
+  OrganizationProfile,
+} from "../types/organizationProfile";
+import { formatDateTime } from
+  "../utils/formatters";
+import "../styles/records.css";
 
-import type { OrganizationProfile } from
-  "../types/organizationProfile";
+const optionalEmail = z
+  .string()
+  .trim()
+  .max(255, "Не более 255 символов")
+  .refine(
+    (value) =>
+      value === "" ||
+      z.string().email().safeParse(value).success,
+    "Укажите корректный email",
+  );
 
-interface FormState {
-  name: string;
-  shortName: string;
-  unp: string;
-  legalAddress: string;
-  email: string;
-  phone: string;
-  directorName: string;
-  bankName: string;
-  bankAccount: string;
-  bankCode: string;
-}
+const organizationSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Укажите полное наименование")
+    .max(500, "Не более 500 символов"),
+  shortName: z
+    .string()
+    .trim()
+    .min(1, "Укажите краткое наименование")
+    .max(255, "Не более 255 символов"),
+  unp: z
+    .string()
+    .trim()
+    .max(50, "Не более 50 символов"),
+  legalAddress: z.string().trim(),
+  email: optionalEmail,
+  phone: z
+    .string()
+    .trim()
+    .max(100, "Не более 100 символов"),
+  directorName: z
+    .string()
+    .trim()
+    .max(255, "Не более 255 символов"),
+  directorPosition: z
+    .string()
+    .trim()
+    .max(255, "Не более 255 символов"),
+  bankName: z
+    .string()
+    .trim()
+    .max(500, "Не более 500 символов"),
+  bankAccount: z
+    .string()
+    .trim()
+    .max(100, "Не более 100 символов"),
+  bankCode: z
+    .string()
+    .trim()
+    .max(100, "Не более 100 символов"),
+});
 
-function createFormState(
+type OrganizationFormValues = z.infer<
+  typeof organizationSchema
+>;
+
+const emptyForm: OrganizationFormValues = {
+  name: "",
+  shortName: "",
+  unp: "",
+  legalAddress: "",
+  email: "",
+  phone: "",
+  directorName: "",
+  directorPosition: "",
+  bankName: "",
+  bankAccount: "",
+  bankCode: "",
+};
+
+function toFormValues(
   profile: OrganizationProfile,
-): FormState {
+): OrganizationFormValues {
   return {
     name: profile.name,
     shortName: profile.short_name,
@@ -39,157 +119,176 @@ function createFormState(
     email: profile.email ?? "",
     phone: profile.phone ?? "",
     directorName: profile.director_name ?? "",
+    directorPosition:
+      profile.director_position ?? "",
     bankName: profile.bank_name ?? "",
     bankAccount: profile.bank_account ?? "",
     bankCode: profile.bank_code ?? "",
   };
 }
 
+function display(value: string | null): string {
+  return value || "Не указано";
+}
+
 export function OrganizationPage() {
-  const [profile, setProfile] =
-    useState<OrganizationProfile | null>(null);
-
-  const [form, setForm] =
-    useState<FormState | null>(null);
-
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-
-  const [error, setError] = useState<string | null>(
-    null,
-  );
-
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const isAdmin = user?.role === "admin";
+  const [isEditing, setIsEditing] = useState(false);
   const [successMessage, setSuccessMessage] =
     useState<string | null>(null);
 
-  const loadProfile = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  const organizationQuery = useQuery({
+    queryKey: ["organization-profile"],
+    queryFn: getOrganizationProfile,
+  });
 
-    try {
-      const loadedProfile =
-        await getOrganizationProfile();
-
-      setProfile(loadedProfile);
-      setForm(createFormState(loadedProfile));
-    } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Не удалось загрузить профиль предприятия",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: {
+      errors,
+      isDirty,
+    },
+  } = useForm<OrganizationFormValues>({
+    resolver: zodResolver(organizationSchema),
+    defaultValues: emptyForm,
+  });
 
   useEffect(() => {
-    void loadProfile();
-  }, [loadProfile]);
+    if (organizationQuery.data) {
+      reset(toFormValues(organizationQuery.data));
+    }
+  }, [organizationQuery.data, reset]);
 
-  function updateField<K extends keyof FormState>(
-    field: K,
-    value: FormState[K],
-  ) {
-    setForm((current) => {
-      if (!current) {
-        return current;
-      }
-
-      return {
-        ...current,
-        [field]: value,
-      };
-    });
-
-    setSuccessMessage(null);
-  }
-
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-
-    if (!form) {
+  useEffect(() => {
+    if (!isEditing || !isDirty) {
       return;
     }
 
-    if (!form.name.trim()) {
-      setError("Укажите полное наименование");
-      return;
+    function handleBeforeUnload(
+      event: BeforeUnloadEvent,
+    ) {
+      event.preventDefault();
     }
 
-    if (!form.shortName.trim()) {
-      setError("Укажите краткое наименование");
-      return;
-    }
+    window.addEventListener(
+      "beforeunload",
+      handleBeforeUnload,
+    );
 
-    const payload: UpdateOrganizationProfilePayload = {
-      name: form.name.trim(),
-      short_name: form.shortName.trim(),
-      unp: form.unp.trim() || null,
-      legal_address:
-        form.legalAddress.trim() || null,
-      email: form.email.trim() || null,
-      phone: form.phone.trim() || null,
-      director_name:
-        form.directorName.trim() || null,
-      bank_name: form.bankName.trim() || null,
-      bank_account:
-        form.bankAccount.trim() || null,
-      bank_code: form.bankCode.trim() || null,
-    };
-
-    setIsSaving(true);
-    setError(null);
-    setSuccessMessage(null);
-
-    try {
-      const updated =
-        await updateOrganizationProfile(payload);
-
-      setProfile(updated);
-      setForm(createFormState(updated));
-      setSuccessMessage("Реквизиты сохранены");
-    } catch (requestError) {
-      setError(
-        requestError instanceof ApiError
-          ? requestError.message
-          : "Не удалось сохранить реквизиты",
+    return () => {
+      window.removeEventListener(
+        "beforeunload",
+        handleBeforeUnload,
       );
-    } finally {
-      setIsSaving(false);
+    };
+  }, [isDirty, isEditing]);
+
+  const blocker = useBlocker(isEditing && isDirty);
+
+  useEffect(() => {
+    if (blocker.state !== "blocked") {
+      return;
     }
+
+    if (
+      window.confirm(
+        "Покинуть страницу? Несохранённые изменения будут потеряны.",
+      )
+    ) {
+      blocker.proceed();
+    } else {
+      blocker.reset();
+    }
+  }, [blocker]);
+
+  const updateMutation = useMutation({
+    mutationFn: (values: OrganizationFormValues) =>
+      updateOrganizationProfile({
+        name: values.name.trim(),
+        short_name: values.shortName.trim(),
+        unp: values.unp.trim() || null,
+        legal_address:
+          values.legalAddress.trim() || null,
+        email: values.email.trim() || null,
+        phone: values.phone.trim() || null,
+        director_name:
+          values.directorName.trim() || null,
+        director_position:
+          values.directorPosition.trim() || null,
+        bank_name: values.bankName.trim() || null,
+        bank_account:
+          values.bankAccount.trim() || null,
+        bank_code: values.bankCode.trim() || null,
+      }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(
+        ["organization-profile"],
+        updated,
+      );
+      reset(toFormValues(updated));
+      setIsEditing(false);
+      setSuccessMessage("Реквизиты сохранены");
+    },
+  });
+
+  function cancelEditing() {
+    if (
+      isDirty &&
+      !window.confirm(
+        "Отменить редактирование? Изменения будут потеряны.",
+      )
+    ) {
+      return;
+    }
+
+    if (organizationQuery.data) {
+      reset(toFormValues(organizationQuery.data));
+    }
+    updateMutation.reset();
+    setIsEditing(false);
   }
 
-  if (isLoading) {
+  if (organizationQuery.isLoading) {
     return (
       <section className="page">
-        <div className="tablePanel">
-          <div className="tableState">
-            <span className="loader" />
-            Загружаем профиль предприятия…
-          </div>
+        <div
+          className="records-state records-state--card"
+          role="status"
+        >
+          <span className="loading-spinner" />
+          <strong>Загружаем организацию</strong>
+          <span>Получаем актуальные реквизиты…</span>
         </div>
       </section>
     );
   }
 
-  if (error && !form) {
+  if (
+    organizationQuery.isError ||
+    !organizationQuery.data
+  ) {
     return (
       <section className="page">
-        <div className="errorState">
-          <div>
-            <strong>
-              Не удалось загрузить профиль
-            </strong>
-            <span>{error}</span>
-          </div>
-
+        <div className="records-state records-state--error records-state--card">
+          <Building2 size={30} aria-hidden="true" />
+          <strong>
+            Не удалось загрузить профиль организации
+          </strong>
+          <span>
+            {organizationQuery.error instanceof Error
+              ? organizationQuery.error.message
+              : "Профиль предприятия не найден"}
+          </span>
           <button
             type="button"
-            className="secondaryButton"
-            onClick={() => void loadProfile()}
+            className="button button--secondary"
+            onClick={() => {
+              void organizationQuery.refetch();
+            }}
           >
             Повторить
           </button>
@@ -198,321 +297,492 @@ export function OrganizationPage() {
     );
   }
 
-  if (!form || !profile) {
-    return null;
-  }
+  const profile = organizationQuery.data;
 
   return (
     <section className="page">
-      <div className="pageHeader">
+      <div className="page-heading">
         <div>
-          <p className="pageEyebrow">
-            Владелец CRM
-          </p>
-
-          <h1>Наша компания</h1>
-
+          <span className="page-eyebrow">
+            Настройки предприятия
+          </span>
+          <h1>Организация</h1>
           <p>
-            Реквизиты ООО «Промас Инжиниринг»,
+            Реквизиты собственной организации,
             используемые в договорах и документах.
           </p>
         </div>
 
-        <span className="organizationStatus">
-          Основная организация
-        </span>
+        <div className="organization-heading-actions">
+          <span className="status-badge status-badge--active">
+            Основная организация
+          </span>
+          {isAdmin && !isEditing && (
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => {
+                setSuccessMessage(null);
+                setIsEditing(true);
+              }}
+            >
+              <Pencil size={17} aria-hidden="true" />
+              Редактировать
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="organizationLayout">
-        <aside className="organizationSummaryCard">
-          <div className="organizationAvatar">
-            ПИ
+      {!isAdmin && (
+        <div className="record-notice" role="note">
+          <ShieldCheck size={20} aria-hidden="true" />
+          <div>
+            <strong>Режим просмотра</strong>
+            <span>
+              Изменять реквизиты может только
+              администратор.
+            </span>
           </div>
+        </div>
+      )}
 
-          <div className="organizationSummaryText">
-            <span>Наша организация</span>
+      {successMessage && (
+        <div
+          className="record-success"
+          role="status"
+        >
+          <CheckCircle2 size={20} aria-hidden="true" />
+          {successMessage}
+        </div>
+      )}
 
-            <h2>
-              {profile.short_name || profile.name}
-            </h2>
-
-            <p>{profile.name}</p>
+      <div className="organization-layout">
+        <aside className="organization-summary">
+          <div className="organization-summary__mark">
+            <Building2 size={27} aria-hidden="true" />
           </div>
+          <span className="section-kicker">
+            Наша организация
+          </span>
+          <h2>{profile.short_name}</h2>
+          <p>{profile.name}</p>
 
-          <div className="organizationQuickInfo">
+          <dl>
             <div>
-              <span>УНП</span>
-              <strong>{profile.unp || "Не указан"}</strong>
+              <dt>УНП</dt>
+              <dd>{display(profile.unp)}</dd>
             </div>
-
             <div>
-              <span>Руководитель</span>
-              <strong>
-                {profile.director_name ||
-                  "Не указан"}
-              </strong>
+              <dt>Руководитель</dt>
+              <dd>{display(profile.director_name)}</dd>
             </div>
-
             <div>
-              <span>Контакты</span>
-              <strong>
-                {profile.phone ||
-                  profile.email ||
-                  "Не указаны"}
-              </strong>
+              <dt>Обновлено</dt>
+              <dd>
+                {formatDateTime(profile.updated_at)}
+              </dd>
             </div>
-          </div>
+          </dl>
 
-          <div className="organizationHint">
-            Эти данные будут подставляться в договоры,
-            письма и шаблоны документов.
+          <div className="organization-summary__hint">
+            Эти данные автоматически используются при
+            формировании документов.
           </div>
         </aside>
 
-        <form
-          className="organizationFormCard"
-          onSubmit={handleSubmit}
-        >
-          <section className="organizationFormSection">
-            <div className="formSectionHeader">
-              <div>
-                <span>Общие сведения</span>
-                <strong>
-                  Наименование и реквизиты
-                </strong>
-              </div>
-            </div>
-
-            <div className="contractFormGrid">
-              <label className="formField contractWideField">
-                <span>
-                  Полное наименование <strong>*</strong>
-                </span>
-
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={(event) =>
-                    updateField(
-                      "name",
-                      event.target.value,
-                    )
-                  }
-                  maxLength={500}
-                  disabled={isSaving}
-                />
-              </label>
-
-              <label className="formField">
-                <span>
-                  Краткое наименование <strong>*</strong>
-                </span>
-
-                <input
-                  type="text"
-                  value={form.shortName}
-                  onChange={(event) =>
-                    updateField(
-                      "shortName",
-                      event.target.value,
-                    )
-                  }
-                  maxLength={255}
-                  disabled={isSaving}
-                />
-              </label>
-
-              <label className="formField">
-                <span>УНП</span>
-
-                <input
-                  type="text"
-                  value={form.unp}
-                  onChange={(event) =>
-                    updateField(
-                      "unp",
-                      event.target.value,
-                    )
-                  }
-                  maxLength={50}
-                  disabled={isSaving}
-                />
-              </label>
-
-              <label className="formField contractWideField">
-                <span>Юридический адрес</span>
-
-                <textarea
-                  value={form.legalAddress}
-                  onChange={(event) =>
-                    updateField(
-                      "legalAddress",
-                      event.target.value,
-                    )
-                  }
-                  rows={3}
-                  disabled={isSaving}
-                />
-              </label>
-            </div>
-          </section>
-
-          <section className="organizationFormSection">
-            <div className="formSectionHeader">
-              <div>
-                <span>Контакты</span>
-                <strong>
-                  Руководитель и связь
-                </strong>
-              </div>
-            </div>
-
-            <div className="contractFormGrid">
-              <label className="formField contractWideField">
-                <span>Руководитель</span>
-
-                <input
-                  type="text"
-                  value={form.directorName}
-                  onChange={(event) =>
-                    updateField(
-                      "directorName",
-                      event.target.value,
-                    )
-                  }
-                  placeholder="Фамилия Имя Отчество"
-                  maxLength={255}
-                  disabled={isSaving}
-                />
-              </label>
-
-              <label className="formField">
-                <span>Телефон</span>
-
-                <input
-                  type="tel"
-                  value={form.phone}
-                  onChange={(event) =>
-                    updateField(
-                      "phone",
-                      event.target.value,
-                    )
-                  }
-                  placeholder="+375 ..."
-                  maxLength={100}
-                  disabled={isSaving}
-                />
-              </label>
-
-              <label className="formField">
-                <span>Email</span>
-
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(event) =>
-                    updateField(
-                      "email",
-                      event.target.value,
-                    )
-                  }
-                  placeholder="info@example.by"
-                  maxLength={255}
-                  disabled={isSaving}
-                />
-              </label>
-            </div>
-          </section>
-
-          <section className="organizationFormSection">
-            <div className="formSectionHeader">
-              <div>
-                <span>Банковские реквизиты</span>
-                <strong>
-                  Банк и расчётный счёт
-                </strong>
-              </div>
-            </div>
-
-            <div className="contractFormGrid">
-              <label className="formField contractWideField">
-                <span>Наименование банка</span>
-
-                <input
-                  type="text"
-                  value={form.bankName}
-                  onChange={(event) =>
-                    updateField(
-                      "bankName",
-                      event.target.value,
-                    )
-                  }
-                  maxLength={500}
-                  disabled={isSaving}
-                />
-              </label>
-
-              <label className="formField">
-                <span>Расчётный счёт</span>
-
-                <input
-                  type="text"
-                  value={form.bankAccount}
-                  onChange={(event) =>
-                    updateField(
-                      "bankAccount",
-                      event.target.value,
-                    )
-                  }
-                  maxLength={100}
-                  disabled={isSaving}
-                />
-              </label>
-
-              <label className="formField">
-                <span>Банковский код</span>
-
-                <input
-                  type="text"
-                  value={form.bankCode}
-                  onChange={(event) =>
-                    updateField(
-                      "bankCode",
-                      event.target.value,
-                    )
-                  }
-                  maxLength={100}
-                  disabled={isSaving}
-                />
-              </label>
-            </div>
-          </section>
-
-          {error && (
-            <div className="formError" role="alert">
-              {error}
-            </div>
-          )}
-
-          {successMessage && (
-            <div className="formSuccess" role="status">
-              {successMessage}
-            </div>
-          )}
-
-          <div className="organizationFormActions">
-            <button
-              type="submit"
-              className="primaryButton"
-              disabled={isSaving}
+        {isEditing && isAdmin ? (
+          <form
+            className="organization-form"
+            onSubmit={(event) => {
+              void handleSubmit((values) =>
+                updateMutation.mutateAsync(values),
+              )(event);
+            }}
+            noValidate
+          >
+            <OrganizationFormSection
+              icon={Building2}
+              kicker="Основные реквизиты"
+              title="Наименование и адрес"
             >
-              {isSaving
-                ? "Сохраняем…"
-                : "Сохранить реквизиты"}
-            </button>
+              <label className="record-field record-field--full">
+                <span>
+                  Полное наименование{" "}
+                  <strong aria-hidden="true">*</strong>
+                </span>
+                <input
+                  {...register("name")}
+                  type="text"
+                  maxLength={500}
+                  aria-invalid={Boolean(errors.name)}
+                />
+                {errors.name && (
+                  <small
+                    className="record-field__error"
+                    role="alert"
+                  >
+                    {errors.name.message}
+                  </small>
+                )}
+              </label>
+              <label className="record-field">
+                <span>
+                  Краткое наименование{" "}
+                  <strong aria-hidden="true">*</strong>
+                </span>
+                <input
+                  {...register("shortName")}
+                  type="text"
+                  maxLength={255}
+                  aria-invalid={Boolean(
+                    errors.shortName,
+                  )}
+                />
+                {errors.shortName && (
+                  <small
+                    className="record-field__error"
+                    role="alert"
+                  >
+                    {errors.shortName.message}
+                  </small>
+                )}
+              </label>
+              <label className="record-field">
+                <span>УНП</span>
+                <input
+                  {...register("unp")}
+                  type="text"
+                  maxLength={50}
+                  aria-invalid={Boolean(errors.unp)}
+                />
+                {errors.unp && (
+                  <small
+                    className="record-field__error"
+                    role="alert"
+                  >
+                    {errors.unp.message}
+                  </small>
+                )}
+              </label>
+              <label className="record-field record-field--full">
+                <span>Юридический адрес</span>
+                <textarea
+                  {...register("legalAddress")}
+                  rows={3}
+                />
+              </label>
+            </OrganizationFormSection>
+
+            <OrganizationFormSection
+              icon={UserRound}
+              kicker="Контакты"
+              title="Руководитель и связь"
+            >
+              <label className="record-field">
+                <span>ФИО руководителя</span>
+                <input
+                  {...register("directorName")}
+                  type="text"
+                  maxLength={255}
+                  aria-invalid={Boolean(
+                    errors.directorName,
+                  )}
+                />
+                {errors.directorName && (
+                  <small
+                    className="record-field__error"
+                    role="alert"
+                  >
+                    {errors.directorName.message}
+                  </small>
+                )}
+              </label>
+              <label className="record-field">
+                <span>Должность руководителя</span>
+                <input
+                  {...register("directorPosition")}
+                  type="text"
+                  maxLength={255}
+                  aria-invalid={Boolean(
+                    errors.directorPosition,
+                  )}
+                />
+                {errors.directorPosition && (
+                  <small
+                    className="record-field__error"
+                    role="alert"
+                  >
+                    {errors.directorPosition.message}
+                  </small>
+                )}
+              </label>
+              <label className="record-field">
+                <span>Email</span>
+                <input
+                  {...register("email")}
+                  type="email"
+                  maxLength={255}
+                  aria-invalid={Boolean(errors.email)}
+                />
+                {errors.email && (
+                  <small
+                    className="record-field__error"
+                    role="alert"
+                  >
+                    {errors.email.message}
+                  </small>
+                )}
+              </label>
+              <label className="record-field">
+                <span>Телефон</span>
+                <input
+                  {...register("phone")}
+                  type="tel"
+                  maxLength={100}
+                  aria-invalid={Boolean(errors.phone)}
+                />
+                {errors.phone && (
+                  <small
+                    className="record-field__error"
+                    role="alert"
+                  >
+                    {errors.phone.message}
+                  </small>
+                )}
+              </label>
+            </OrganizationFormSection>
+
+            <OrganizationFormSection
+              icon={Landmark}
+              kicker="Банковские реквизиты"
+              title="Банк и расчётный счёт"
+            >
+              <label className="record-field record-field--full">
+                <span>Наименование банка</span>
+                <input
+                  {...register("bankName")}
+                  type="text"
+                  maxLength={500}
+                  aria-invalid={Boolean(
+                    errors.bankName,
+                  )}
+                />
+                {errors.bankName && (
+                  <small
+                    className="record-field__error"
+                    role="alert"
+                  >
+                    {errors.bankName.message}
+                  </small>
+                )}
+              </label>
+              <label className="record-field">
+                <span>Расчётный счёт</span>
+                <input
+                  {...register("bankAccount")}
+                  type="text"
+                  maxLength={100}
+                  aria-invalid={Boolean(
+                    errors.bankAccount,
+                  )}
+                />
+                {errors.bankAccount && (
+                  <small
+                    className="record-field__error"
+                    role="alert"
+                  >
+                    {errors.bankAccount.message}
+                  </small>
+                )}
+              </label>
+              <label className="record-field">
+                <span>БИК / код банка</span>
+                <input
+                  {...register("bankCode")}
+                  type="text"
+                  maxLength={100}
+                  aria-invalid={Boolean(
+                    errors.bankCode,
+                  )}
+                />
+                {errors.bankCode && (
+                  <small
+                    className="record-field__error"
+                    role="alert"
+                  >
+                    {errors.bankCode.message}
+                  </small>
+                )}
+              </label>
+            </OrganizationFormSection>
+
+            {updateMutation.isError && (
+              <div className="form-alert" role="alert">
+                {updateMutation.error instanceof Error
+                  ? updateMutation.error.message
+                  : "Не удалось сохранить реквизиты"}
+              </div>
+            )}
+
+            <div className="organization-form__actions">
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={cancelEditing}
+                disabled={updateMutation.isPending}
+              >
+                <X size={17} aria-hidden="true" />
+                Отмена
+              </button>
+              <button
+                type="submit"
+                className="button button--primary"
+                disabled={
+                  updateMutation.isPending || !isDirty
+                }
+              >
+                {updateMutation.isPending ? (
+                  <span
+                    className="button-spinner"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Save
+                    size={17}
+                    aria-hidden="true"
+                  />
+                )}
+                {updateMutation.isPending
+                  ? "Сохраняем…"
+                  : "Сохранить"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="organization-details">
+            <OrganizationDetailsSection
+              icon={Building2}
+              kicker="Основные реквизиты"
+              title="Наименование и адрес"
+              items={[
+                ["Полное наименование", profile.name],
+                [
+                  "Краткое наименование",
+                  profile.short_name,
+                ],
+                ["УНП", display(profile.unp)],
+                [
+                  "Юридический адрес",
+                  display(profile.legal_address),
+                ],
+              ]}
+            />
+            <OrganizationDetailsSection
+              icon={UserRound}
+              kicker="Контакты"
+              title="Руководитель и связь"
+              items={[
+                [
+                  "ФИО руководителя",
+                  display(profile.director_name),
+                ],
+                [
+                  "Должность",
+                  display(profile.director_position),
+                ],
+                ["Email", display(profile.email)],
+                ["Телефон", display(profile.phone)],
+              ]}
+            />
+            <OrganizationDetailsSection
+              icon={Landmark}
+              kicker="Банковские реквизиты"
+              title="Банк и расчётный счёт"
+              items={[
+                [
+                  "Наименование банка",
+                  display(profile.bank_name),
+                ],
+                [
+                  "Расчётный счёт",
+                  display(profile.bank_account),
+                ],
+                [
+                  "БИК / код банка",
+                  display(profile.bank_code),
+                ],
+              ]}
+            />
           </div>
-        </form>
+        )}
       </div>
+    </section>
+  );
+}
+
+interface OrganizationSectionProps {
+  icon: typeof Building2;
+  kicker: string;
+  title: string;
+}
+
+interface OrganizationFormSectionProps
+  extends OrganizationSectionProps {
+  children: ReactNode;
+}
+
+function OrganizationFormSection({
+  icon: Icon,
+  kicker,
+  title,
+  children,
+}: OrganizationFormSectionProps) {
+  return (
+    <section className="organization-section">
+      <div className="organization-section__heading">
+        <span>
+          <Icon size={20} aria-hidden="true" />
+        </span>
+        <div>
+          <small>{kicker}</small>
+          <h2>{title}</h2>
+        </div>
+      </div>
+      <div className="record-form__grid">{children}</div>
+    </section>
+  );
+}
+
+interface OrganizationDetailsSectionProps
+  extends OrganizationSectionProps {
+  items: Array<[string, string]>;
+}
+
+function OrganizationDetailsSection({
+  icon: Icon,
+  kicker,
+  title,
+  items,
+}: OrganizationDetailsSectionProps) {
+  return (
+    <section className="organization-section">
+      <div className="organization-section__heading">
+        <span>
+          <Icon size={20} aria-hidden="true" />
+        </span>
+        <div>
+          <small>{kicker}</small>
+          <h2>{title}</h2>
+        </div>
+      </div>
+      <dl className="description-list">
+        {items.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
     </section>
   );
 }

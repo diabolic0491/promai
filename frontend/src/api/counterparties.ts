@@ -1,5 +1,9 @@
 import { apiRequest } from "./client";
-import type { Counterparty } from "../types/counterparty";
+
+import type {
+  Counterparty,
+} from "../types/counterparty";
+import type { Page } from "../types/pagination";
 
 export interface CounterpartiesQuery {
   search?: string;
@@ -15,9 +19,15 @@ export interface CreateCounterpartyPayload {
   legal_address?: string | null;
 }
 
-export async function getCounterparties(
-  query: CounterpartiesQuery = {},
-): Promise<Counterparty[]> {
+export interface UpdateCounterpartyPayload {
+  name?: string;
+  short_name?: string | null;
+  legal_address?: string | null;
+}
+
+function buildCounterpartiesQuery(
+  query: CounterpartiesQuery,
+): string {
   const parameters = new URLSearchParams();
 
   if (query.search?.trim()) {
@@ -37,28 +47,43 @@ export async function getCounterparties(
   }
 
   const queryString = parameters.toString();
+  return queryString ? `?${queryString}` : "";
+}
 
-  return apiRequest<Counterparty[]>(
-    `/counterparties${queryString ? `?${queryString}` : ""}`,
+export function getCounterparties(
+  query: CounterpartiesQuery = {},
+): Promise<Page<Counterparty>> {
+  return apiRequest<Page<Counterparty>>(
+    `/counterparties${buildCounterpartiesQuery(query)}`,
   );
 }
 
-export async function createCounterparty(
+export function getCounterparty(
+  counterpartyId: number,
+): Promise<Counterparty> {
+  return apiRequest<Counterparty>(
+    `/counterparties/${counterpartyId}`,
+  );
+}
+
+export function getCounterpartyByUnp(
+  unp: string,
+): Promise<Counterparty> {
+  return apiRequest<Counterparty>(
+    `/counterparties/by-unp/${encodeURIComponent(unp)}`,
+  );
+}
+
+export function createCounterparty(
   payload: CreateCounterpartyPayload,
 ): Promise<Counterparty> {
   return apiRequest<Counterparty>("/counterparties", {
     method: "POST",
-    body: JSON.stringify(payload),
+    json: payload,
   });
 }
 
-export interface UpdateCounterpartyPayload {
-  name?: string;
-  short_name?: string | null;
-  legal_address?: string | null;
-}
-
-export async function updateCounterparty(
+export function updateCounterparty(
   counterpartyId: number,
   payload: UpdateCounterpartyPayload,
 ): Promise<Counterparty> {
@@ -66,29 +91,25 @@ export async function updateCounterparty(
     `/counterparties/${counterpartyId}`,
     {
       method: "PATCH",
-      body: JSON.stringify(payload),
+      json: payload,
     },
   );
 }
 
-export async function archiveCounterparty(
+export function archiveCounterparty(
   counterpartyId: number,
 ): Promise<Counterparty> {
   return apiRequest<Counterparty>(
     `/counterparties/${counterpartyId}/archive`,
-    {
-      method: "POST",
-    },
+    { method: "POST" },
   );
 }
 
-export async function restoreCounterparty(
+export function restoreCounterparty(
   counterpartyId: number,
 ): Promise<Counterparty> {
   return apiRequest<Counterparty>(
     `/counterparties/${counterpartyId}/restore`,
-    {
-      method: "POST",
-    },
+    { method: "POST" },
   );
 }

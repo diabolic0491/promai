@@ -1,0 +1,193 @@
+.technical-specifications-filters > label:not(
+    .records-toggle
+  ) {
+  min-width: 170px;
+  flex: 1 1 170px;
+}
+
+.technical-specifications-table {
+  min-width: 1450px;
+}
+
+.technical-specifications-table td:first-child {
+  width: 280px;
+}
+
+.technical-specifications-table td:nth-child(2),
+.technical-specifications-table td:nth-child(4) {
+  width: 190px;
+}
+
+.technical-specification-dates {
+  white-space: nowrap;
+}
+
+.technical-specification-status--draft {
+  color: #49706d;
+  border-color: #d7e4e2;
+  background: #f3f7f6;
+}
+
+.technical-specification-status--pending_approval {
+  color: #946314;
+  border-color: #efd9a7;
+  background: #fff8e8;
+}
+
+.technical-specification-status--approved {
+  color: #117a50;
+  border-color: rgba(17, 122, 80, 0.16);
+  background: #edf9f3;
+}
+
+.technical-specification-status--issued {
+  color: #216b78;
+  border-color: #c8e2e6;
+  background: #eff9fb;
+}
+
+.technical-specification-status--cancelled {
+  color: #9b3328;
+  border-color: #efc9c4;
+  background: #fff3f1;
+}
+
+.technical-form-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.technical-form-links > span {
+  padding: 7px 10px;
+  border-radius: 9px;
+  color: #4e6e6b;
+  background: #f3f8f7;
+  font-size: 11px;
+}
+
+.technical-form-links strong {
+  color: var(--color-ink);
+}
+
+.technical-specification-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(
+      300px,
+      0.65fr
+    );
+  align-items: start;
+  gap: 18px;
+}
+
+.technical-specification-main,
+.technical-specification-sidebar {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.technical-specification-sidebar {
+  position: sticky;
+  top: calc(var(--topbar-height) + 24px);
+}
+
+.technical-specification-links {
+  display: flex;
+  flex-direction: column;
+}
+
+.technical-specification-file {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 13px;
+  background: #fbfdfd;
+}
+
+.technical-specification-file > span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border-radius: 11px;
+  color: #14736d;
+  background: #eaf7f3;
+}
+
+.technical-specification-file > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.technical-specification-file strong {
+  overflow-wrap: anywhere;
+  color: var(--color-ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.technical-specification-file small {
+  color: var(--color-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.technical-specification-file-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.technical-specification-file-actions .button {
+  width: 100%;
+}
+
+.technical-specification-status-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  color: #466c68;
+  background: #f8fbfa;
+}
+
+.technical-specification-status-card > svg {
+  flex: 0 0 auto;
+  color: #43817c;
+}
+
+.technical-specification-status-card > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.technical-specification-status-card strong {
+  color: var(--color-ink);
+  font-size: 12px;
+}
+
+.technical-specification-status-card span {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 1040px) {
+  .technical-specification-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .technical-specification-sidebar {
+    position: static;
+  }
+}

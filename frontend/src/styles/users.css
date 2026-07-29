@@ -1,0 +1,108 @@
+.user-administration-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 15px 17px;
+  border: 1px solid #cfe5df;
+  border-radius: 14px;
+  color: #456a67;
+  background: #f3faf7;
+}
+
+.user-administration-notice > svg {
+  flex: 0 0 auto;
+  color: #17745e;
+}
+
+.user-administration-notice > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.user-administration-notice strong {
+  color: var(--color-ink);
+  font-size: 12px;
+}
+
+.user-administration-notice span {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.users-filters > label {
+  min-width: 210px;
+}
+
+.users-table {
+  min-width: 1040px;
+}
+
+.users-table td:first-child {
+  width: 210px;
+}
+
+.users-table__username {
+  display: inline;
+}
+
+.users-table__self {
+  display: inline-flex;
+  margin-left: 7px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  color: #246b65;
+  background: #e8f6f2;
+  font-size: 9px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.user-role--admin {
+  color: #5b4a9e;
+  border-color: #dcd4f4;
+  background: #f6f3ff;
+}
+
+.user-role--manager {
+  color: #216b78;
+  border-color: #c8e2e6;
+  background: #eff9fb;
+}
+
+.user-dialog {
+  width: min(680px, 100%);
+}
+
+.user-dialog__icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border-radius: 12px;
+  color: #15675f;
+  background: #eaf7f3;
+}
+
+.user-active-toggle {
+  min-height: 72px;
+  align-self: end;
+  padding: 12px 0;
+}
+
+.user-active-toggle input:disabled + span {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.user-self-notice {
+  align-self: end;
+  padding: 11px 12px;
+  border: 1px solid #d8e6e3;
+  border-radius: 11px;
+  color: #5a7471;
+  background: #f7faf9;
+  font-size: 10px;
+  line-height: 1.5;
+}
