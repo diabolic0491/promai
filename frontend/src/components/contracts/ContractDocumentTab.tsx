@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-query";
 import {
   Download,
+  Eye,
   FileCheck2,
   FilePlus2,
   FileText,
@@ -39,6 +40,9 @@ import {
   formatDateTime,
   formatFileSize,
 } from "../../utils/formatters";
+import {
+  DocxPreviewModal,
+} from "../documents/DocxPreviewModal";
 
 interface ContractDocumentTabProps {
   contract: Contract;
@@ -56,6 +60,8 @@ export function ContractDocumentTab({
     useState<string | null>(null);
   const [successMessage, setSuccessMessage] =
     useState<string | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] =
+    useState(false);
 
   const versionsQuery = useQuery({
     queryKey: [
@@ -119,6 +125,11 @@ export function ContractDocumentTab({
           `Договор № ${contract.number}.docx`,
       );
     },
+  });
+
+  const previewMutation = useMutation({
+    mutationFn: () =>
+      downloadLatestContractDocument(contract.id),
   });
 
   const uploadMutation = useMutation({
@@ -297,6 +308,32 @@ export function ContractDocumentTab({
             )}
             Скачать последнюю версию
           </button>
+
+          <button
+            type="button"
+            className="button button--secondary"
+            disabled={
+              !latestVersion ||
+              previewMutation.isPending
+            }
+            onClick={() => {
+              setIsPreviewOpen(true);
+              previewMutation.reset();
+              previewMutation.mutate();
+            }}
+          >
+            {previewMutation.isPending ? (
+              <span
+                className="button-spinner"
+                aria-hidden="true"
+              />
+            ) : (
+              <Eye size={17} aria-hidden="true" />
+            )}
+            {previewMutation.isPending
+              ? "Загружаем…"
+              : "Предпросмотр"}
+          </button>
         </div>
 
         {!contract.template_id && (
@@ -452,6 +489,26 @@ export function ContractDocumentTab({
           {successMessage}
         </div>
       )}
+
+      <DocxPreviewModal
+        isOpen={isPreviewOpen}
+        title="Предпросмотр договора"
+        fallbackFileName={
+          latestVersion?.file_name ??
+          contract.generated_file_name ??
+          `Договор № ${contract.number}.docx`
+        }
+        download={previewMutation.data ?? null}
+        isLoading={previewMutation.isPending}
+        error={previewMutation.error}
+        onClose={() => {
+          setIsPreviewOpen(false);
+          previewMutation.reset();
+        }}
+        onRetry={() => {
+          previewMutation.mutate();
+        }}
+      />
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
   CalendarDays,
   ClipboardList,
   Download,
+  Eye,
   FileOutput,
   FileText,
   Info,
@@ -33,6 +34,9 @@ import {
 import {
   ConfirmDialog,
 } from "../components/ui/ConfirmDialog";
+import {
+  DocxPreviewModal,
+} from "../components/documents/DocxPreviewModal";
 import {
   technicalSpecificationStatusLabels,
 } from "../constants/technicalSpecifications";
@@ -68,6 +72,8 @@ export function TechnicalSpecificationPage() {
     useState(false);
   const [successMessage, setSuccessMessage] =
     useState<string | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] =
+    useState(false);
 
   const technicalSpecificationQuery = useQuery({
     queryKey: [
@@ -144,6 +150,13 @@ export function TechnicalSpecificationPage() {
         ]);
       }
     },
+  });
+
+  const previewMutation = useMutation({
+    mutationFn: () =>
+      downloadTechnicalSpecification(
+        technicalSpecificationId!,
+      ),
   });
 
   if (!technicalSpecificationId) {
@@ -581,7 +594,41 @@ export function TechnicalSpecificationPage() {
                 <button
                   type="button"
                   className="button button--secondary"
-                  disabled={fileMutation.isPending}
+                  disabled={
+                    fileMutation.isPending ||
+                    previewMutation.isPending
+                  }
+                  onClick={() => {
+                    setIsPreviewOpen(true);
+                    previewMutation.reset();
+                    previewMutation.mutate();
+                  }}
+                >
+                  {previewMutation.isPending ? (
+                    <span
+                      className="button-spinner"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Eye
+                      size={17}
+                      aria-hidden="true"
+                    />
+                  )}
+                  {previewMutation.isPending
+                    ? "Загружаем…"
+                    : "Предпросмотр"}
+                </button>
+              )}
+
+              {technicalSpecification.generated_file_name && (
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  disabled={
+                    fileMutation.isPending ||
+                    previewMutation.isPending
+                  }
                   onClick={() =>
                     fileMutation.mutate("download")
                   }
@@ -620,6 +667,25 @@ export function TechnicalSpecificationPage() {
           </section>
         </aside>
       </div>
+
+      <DocxPreviewModal
+        isOpen={isPreviewOpen}
+        title="Предпросмотр технического задания"
+        fallbackFileName={
+          technicalSpecification.generated_file_name ??
+          `Техническое задание ${technicalSpecification.id}.docx`
+        }
+        download={previewMutation.data ?? null}
+        isLoading={previewMutation.isPending}
+        error={previewMutation.error}
+        onClose={() => {
+          setIsPreviewOpen(false);
+          previewMutation.reset();
+        }}
+        onRetry={() => {
+          previewMutation.mutate();
+        }}
+      />
 
       <ConfirmDialog
         isOpen={confirmArchive}

@@ -1,0 +1,230 @@
+.docx-preview-backdrop {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(11, 35, 34, 0.58);
+  backdrop-filter: blur(4px);
+}
+
+.docx-preview-modal {
+  display: flex;
+  width: min(1180px, 96vw);
+  height: min(920px, 94vh);
+  min-height: 420px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 20px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.docx-preview-modal__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 13px;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.docx-preview-modal__icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  border-radius: 13px;
+  color: #14736d;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(40, 232, 121, 0.18),
+      rgba(48, 211, 240, 0.2)
+    );
+}
+
+.docx-preview-modal__heading {
+  min-width: 0;
+  flex: 1;
+}
+
+.docx-preview-modal__heading h2 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-ink);
+  font-size: 17px;
+  letter-spacing: -0.015em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docx-preview-modal__heading p {
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docx-preview-modal__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.docx-preview-modal__close {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  color: var(--color-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.docx-preview-modal__close:hover {
+  color: var(--color-ink);
+  border-color: var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.docx-preview-modal__body {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  background: #e5ebea;
+}
+
+.docx-preview-modal__host {
+  min-width: min-content;
+  min-height: 100%;
+}
+
+.docx-preview-modal__document {
+  min-height: 100%;
+}
+
+.docx-preview-modal__document > .docx-wrapper {
+  min-height: 100%;
+  padding: 28px 22px;
+  background: #e5ebea;
+}
+
+.docx-preview-modal__document section.docx {
+  margin-bottom: 22px;
+  box-shadow:
+    0 2px 8px rgba(20, 52, 50, 0.08),
+    0 18px 48px rgba(20, 52, 50, 0.12);
+}
+
+.docx-preview-modal__state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  min-height: 280px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  padding: 28px;
+  color: var(--color-muted);
+  background:
+    radial-gradient(
+      circle at 50% 42%,
+      rgba(48, 211, 240, 0.09),
+      transparent 28%
+    ),
+    #f8fbfa;
+  text-align: center;
+}
+
+.docx-preview-modal__state strong {
+  margin-top: 4px;
+  color: var(--color-ink);
+  font-size: 14px;
+}
+
+.docx-preview-modal__state span:not(
+    .loading-spinner
+  ) {
+  max-width: 430px;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.docx-preview-modal__state--error {
+  color: #9b3c33;
+  background:
+    radial-gradient(
+      circle at 50% 42%,
+      rgba(222, 91, 76, 0.08),
+      transparent 28%
+    ),
+    #fffafa;
+}
+
+.docx-preview-modal__state--error strong {
+  color: #7f2f27;
+}
+
+.docx-preview-modal__state--error .button {
+  margin-top: 8px;
+}
+
+@media (max-width: 760px) {
+  .docx-preview-backdrop {
+    padding: 0;
+  }
+
+  .docx-preview-modal {
+    width: 100vw;
+    height: 100vh;
+    min-height: 100vh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .docx-preview-modal__header {
+    align-items: flex-start;
+    padding: 12px;
+  }
+
+  .docx-preview-modal__icon {
+    display: none;
+  }
+
+  .docx-preview-modal__heading {
+    padding-top: 5px;
+  }
+
+  .docx-preview-modal__actions {
+    gap: 5px;
+  }
+
+  .docx-preview-modal__actions .button {
+    width: 40px;
+    min-height: 40px;
+    padding: 0;
+    overflow: hidden;
+    font-size: 0;
+  }
+
+  .docx-preview-modal__actions .button svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .docx-preview-modal__document > .docx-wrapper {
+    padding: 14px 8px;
+  }
+}
