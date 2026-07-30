@@ -16,9 +16,6 @@ import { ContractsPage } from
   "../pages/ContractsPage";
 import { ForbiddenPage } from "../pages/ForbiddenPage";
 import { LoginPage } from "../pages/LoginPage";
-import {
-  ModulePlaceholderPage,
-} from "../pages/ModulePlaceholderPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { OrganizationPage } from
   "../pages/OrganizationPage";
@@ -31,6 +28,8 @@ import {
 import {
   TechnicalSpecificationsPage,
 } from "../pages/TechnicalSpecificationsPage";
+import { TemplatesPage } from
+  "../pages/TemplatesPage";
 import { UsersPage } from "../pages/UsersPage";
 
 export const router = createBrowserRouter([
@@ -108,13 +107,7 @@ export const router = createBrowserRouter([
           },
           {
             path: "/templates",
-            element: (
-              <ModulePlaceholderPage
-                eyebrow="Документы"
-                title="Шаблоны"
-                description="Менеджеру будут доступны активные шаблоны, администратору — полный жизненный цикл."
-              />
-            ),
+            element: <TemplatesPage />,
           },
           {
             path: "/organization",
