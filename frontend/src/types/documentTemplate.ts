@@ -16,3 +16,17 @@ export interface DocumentTemplate {
   created_at: string;
   updated_at: string;
 }
+
+export interface CreateDocumentTemplatePayload {
+  name: string;
+  template_type: DocumentTemplateType;
+  description: string | null;
+  required_variables: string[];
+  file: File;
+}
+
+export interface UpdateDocumentTemplatePayload {
+  name?: string;
+  description?: string | null;
+  is_active?: boolean;
+}

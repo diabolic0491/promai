@@ -1,0 +1,245 @@
+.templates-role-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 15px 17px;
+  border: 1px solid #cfe5df;
+  border-radius: 14px;
+  color: #456a67;
+  background: #f3faf7;
+}
+
+.templates-role-notice > svg {
+  flex: 0 0 auto;
+  color: #17745e;
+}
+
+.templates-role-notice > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.templates-role-notice strong {
+  color: var(--color-ink);
+  font-size: 12px;
+}
+
+.templates-role-notice span {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.templates-filters > label:not(.records-toggle) {
+  min-width: 240px;
+}
+
+.templates-table {
+  min-width: 1160px;
+}
+
+.templates-table td:nth-child(1) {
+  width: 260px;
+}
+
+.templates-table td:nth-child(3) {
+  width: 220px;
+}
+
+.templates-table td:last-child {
+  width: 150px;
+}
+
+.templates-table__file {
+  display: block;
+  max-width: 210px;
+  overflow: hidden;
+  color: var(--color-text);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-type {
+  display: inline-flex;
+  min-height: 27px;
+  align-items: center;
+  padding: 5px 9px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.template-type--contract {
+  color: #3f5f9d;
+  border-color: #ccd8ee;
+  background: #f2f6fd;
+}
+
+.template-type--technical_specification {
+  color: #6e5722;
+  border-color: #eadcb9;
+  background: #fff9e9;
+}
+
+.template-status--archived {
+  color: #8b4b43;
+  border-color: #edcec9;
+  background: #fff4f2;
+}
+
+.template-variable-count {
+  display: inline-flex;
+  min-height: 27px;
+  align-items: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: #316762;
+  background: #edf7f5;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.template-dialog {
+  width: min(760px, 100%);
+}
+
+.template-dialog__icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border-radius: 12px;
+  color: #15675f;
+  background: #eaf7f3;
+}
+
+.template-variable-entry {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.template-variable-entry input {
+  flex: 1;
+}
+
+.template-variable-entry .button {
+  flex: 0 0 auto;
+}
+
+.template-variable-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.template-variable-chips > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 7px 6px 10px;
+  border: 1px solid #cfe3df;
+  border-radius: 999px;
+  color: #285f5a;
+  background: #f1f9f6;
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono",
+    monospace;
+  font-size: 10px;
+}
+
+.template-variable-chips button {
+  display: grid;
+  width: 19px;
+  height: 19px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #557a76;
+  background: transparent;
+  cursor: pointer;
+}
+
+.template-variable-chips button:hover {
+  color: #8d2d24;
+  background: #ffe9e6;
+}
+
+.record-field input[type="file"] {
+  padding: 7px;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.record-field input[type="file"]::file-selector-button {
+  margin-right: 10px;
+  padding: 8px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-ink);
+  background: var(--color-surface-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.template-file-summary {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 13px;
+  border: 1px solid var(--color-border);
+  border-radius: 11px;
+  background: #f8fbfa;
+}
+
+.template-file-summary > span {
+  color: var(--color-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.template-file-summary strong {
+  overflow: hidden;
+  color: var(--color-ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-file-summary small {
+  color: var(--color-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.template-active-toggle {
+  min-height: 78px;
+  align-self: stretch;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 11px;
+  background: #fbfdfd;
+  white-space: normal;
+}
+
+@media (max-width: 680px) {
+  .template-variable-entry {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .template-variable-entry .button {
+    width: 100%;
+  }
+}
